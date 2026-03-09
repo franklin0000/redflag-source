@@ -1,83 +1,53 @@
-/**
- * Storage Service — Uses Supabase Storage for all file uploads.
- * Firebase Storage is NOT used (not activated on the project).
- */
-import { uploadToSupabase } from './supabase';
+// storageService.js — File uploads via Render backend → Cloudinary
+import { uploadFile } from './api';
 
 /**
- * Generates a unique filename for uploads
- * @param {string} prefix - Prefix for the filename
- * @param {string} extension - File extension
- * @returns {string} Unique filename
- */
-export const generateUniqueFileName = (prefix = 'file', extension = 'bin') => {
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 10000);
-    return `${prefix}_${timestamp}_${random}.${extension}`;
-};
-
-/**
- * Uploads media for a community post (photos, audio, video, documents)
- * @param {File} file - The file to upload
- * @param {string} roomId - The community room ID
- * @returns {Promise<string>} The public URL
- */
-export const uploadCommunityMedia = async (file, roomId) => {
-    const extension = file.name?.split('.').pop() || 'bin';
-    const fileName = generateUniqueFileName('post', extension);
-    const path = `community/${roomId}/${fileName}`;
-    return uploadToSupabase('media', path, file);
-};
-
-/**
- * Uploads user profile media
+ * Upload a profile media file (photo, video)
  * @param {File} file
  * @param {string} userId
- * @param {string} type - 'photos', 'videos', 'voice'
- * @returns {Promise<string>}
+ * @param {string} type - 'photos' | 'videos' | 'evidence'
+ * @returns {Promise<string>} public URL
  */
-export const uploadProfileMedia = async (file, userId, type) => {
-    const extension = file.name?.split('.').pop() || 'webm';
-    const fileName = generateUniqueFileName(type.slice(0, -1), extension);
-    const path = `users/${userId}/${type}/${fileName}`;
-    return uploadToSupabase('media', path, file);
-};
+export async function uploadProfileMedia(file, userId, type = 'photos') {
+    return uploadFile(file, `redflag/${userId}/${type}`);
+}
 
 /**
- * Uploads media for a chat message
- * @param {File} file
- * @param {string} roomId
- * @returns {Promise<string>}
+ * Upload a report evidence file
  */
-export const uploadChatMedia = async (file, roomId) => {
-    const extension = file.name?.split('.').pop() || 'bin';
-    const fileName = generateUniqueFileName('chat', extension);
-    const path = `chats/${roomId}/${fileName}`;
-    return uploadToSupabase('media', path, file);
-};
+export async function uploadEvidence(file, userId) {
+    return uploadFile(file, `redflag/${userId}/evidence`);
+}
 
 /**
- * Uploads evidence files for reports
- * @param {File} file
- * @param {string} userId
- * @returns {Promise<string>}
+ * Upload a chat attachment
  */
-export const uploadEvidence = async (file, userId) => {
-    const extension = file.name?.split('.').pop() || 'bin';
-    const fileName = generateUniqueFileName('evidence', extension);
-    const path = `evidence/${userId}/${fileName}`;
-    return uploadToSupabase('media', path, file);
-};
+export async function uploadChatAttachment(file, matchId) {
+    return uploadFile(file, `redflag/chat/${matchId}`);
+}
 
 /**
- * Uploads media for map location flags (photos, audio, doc)
- * @param {File} file
- * @param {string} userId
- * @returns {Promise<string>}
+ * Upload an avatar
  */
-export const uploadFlagMedia = async (file, userId) => {
-    const extension = file.name?.split('.').pop() || 'bin';
-    const fileName = generateUniqueFileName('flag', extension);
-    const path = `flags/${userId}/${fileName}`;
-    return uploadToSupabase('media', path, file);
-};
+export async function uploadAvatar(file, userId) {
+    return uploadFile(file, `redflag/${userId}/avatar`);
+}
+
+/**
+ * Legacy: upload chat media (used in ChatRoom.jsx)
+ */
+export async function uploadChatMedia(file, room) {
+    return uploadFile(file, `redflag/chat/${room}`);
+}
+
+export async function uploadCommunityMedia(file, userId) {
+    return uploadFile(file, `redflag/${userId}/community`);
+}
+
+export async function uploadFlagMedia(file, userId) {
+    return uploadFile(file, `redflag/${userId}/flags`);
+}
+
+export async function uploadReportMedia(file, userId) {
+    return uploadFile(file, `redflag/${userId}/reports`);
+}
