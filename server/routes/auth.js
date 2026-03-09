@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const db = require('../db');
 const { signToken, signRefreshToken, JWT_SECRET } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
@@ -100,6 +101,73 @@ router.get('/me', require('../middleware/auth').requireAuth, async (req, res) =>
   delete user.password_hash;
   delete user.refresh_token;
   res.json({ user });
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  try {
+    const { rows } = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (!rows.length) return res.json({ message: 'If that email exists, a reset link was sent.' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const exp = new Date(Date.now() + 3600 * 1000); // 1 hour
+    await db.query(
+      'UPDATE users SET reset_token = $1, reset_token_exp = $2 WHERE id = $3',
+      [token, exp, rows[0].id]
+    );
+    // In production: send email with token link
+    // For now return the token (dev mode) — remove in production
+    const isDev = process.env.NODE_ENV !== 'production';
+    res.json({
+      message: 'If that email exists, a reset link was sent.',
+      ...(isDev ? { reset_token: token } : {}),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'token and password required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  try {
+    const { rows } = await db.query(
+      'SELECT id FROM users WHERE reset_token = $1 AND reset_token_exp > NOW()',
+      [token]
+    );
+    if (!rows.length) return res.status(400).json({ error: 'Invalid or expired token' });
+    const hash = await bcrypt.hash(password, 12);
+    await db.query(
+      'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_exp = NULL WHERE id = $2',
+      [hash, rows[0].id]
+    );
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/auth/password — change password (authenticated)
+router.patch('/password', require('../middleware/auth').requireAuth, async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password)
+    return res.status(400).json({ error: 'current_password and new_password required' });
+  if (new_password.length < 6)
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  try {
+    const { rows } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+    const valid = await bcrypt.compare(current_password, rows[0].password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hash = await bcrypt.hash(new_password, 12);
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

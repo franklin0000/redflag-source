@@ -70,4 +70,117 @@ router.patch('/me/subscription', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/users/me — delete account
+router.delete('/me', requireAuth, async (req, res) => {
+  try {
+    await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/users/me/settings
+router.get('/me/settings', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
+    res.json(rows[0]?.settings || {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/users/me/settings
+router.patch('/me/settings', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `UPDATE users SET settings = COALESCE(settings, '{}') || $1::jsonb WHERE id = $2 RETURNING settings`,
+      [JSON.stringify(req.body), req.user.id]
+    );
+    res.json(rows[0].settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/users/blocked
+router.get('/blocked', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT u.id, u.name, u.username, u.avatar_url
+       FROM blocked_users b JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = $1`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/users/block/:id
+router.post('/block/:id', requireAuth, async (req, res) => {
+  try {
+    await db.query(
+      'INSERT INTO blocked_users (blocker_id, blocked_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/users/block/:id
+router.delete('/block/:id', requireAuth, async (req, res) => {
+  try {
+    await db.query(
+      'DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/users/mute/:matchId
+router.get('/mute/:matchId', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT 1 FROM muted_chats WHERE user_id = $1 AND match_id = $2',
+      [req.user.id, req.params.matchId]
+    );
+    res.json({ muted: rows.length > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/users/mute/:matchId
+router.post('/mute/:matchId', requireAuth, async (req, res) => {
+  try {
+    await db.query(
+      'INSERT INTO muted_chats (user_id, match_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [req.user.id, req.params.matchId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/users/mute/:matchId
+router.delete('/mute/:matchId', requireAuth, async (req, res) => {
+  try {
+    await db.query(
+      'DELETE FROM muted_chats WHERE user_id = $1 AND match_id = $2',
+      [req.user.id, req.params.matchId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -43,6 +43,8 @@ app.use('/api/dating',        require('./routes/dating'));
 app.use('/api/posts',         require('./routes/posts'));
 app.use('/api/reports',       require('./routes/reports'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/searches',      require('./routes/searches'));
+app.use('/api/stats',         require('./routes/stats'));
 
 // ── File Upload (any route) ───────────────────────────────────
 const upload = require('./middleware/upload');
@@ -183,6 +185,15 @@ io.on('connection', (socket) => {
   // Typing indicator
   socket.on('typing', ({ matchId, isTyping }) => {
     socket.to(`match:${matchId}`).emit('user_typing', { userId, isTyping });
+  });
+
+  // WebRTC call signaling
+  socket.on('call:signal', ({ matchId, signal, from, type, callType }) => {
+    socket.to(`match:${matchId}`).emit('call:signal', { signal, from, type, callType });
+  });
+
+  socket.on('call:end', ({ matchId }) => {
+    socket.to(`match:${matchId}`).emit('call:end');
   });
 
   socket.on('disconnect', () => {

@@ -1,67 +1,34 @@
 /**
- * 🎫 TokenService — JWT Auth Security Layer
- * 
- * Handles Supabase Session/Token management.
+ * tokenService.js — JWT token utilities for our Express backend
  */
 
-import { supabase } from './supabase';
-
-/**
- * Get a fresh Supabase Access Token (JWT).
- * 
- * @returns {Promise<string|null>} The JWT token
- */
 export async function getSecureToken() {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
+    return localStorage.getItem('rf_token') || null;
 }
 
-/**
- * Validate the current token's integrity and expiry.
- * 
- * @returns {Promise<{valid: boolean, expiresIn: number, claim: Object}>}
- */
 export async function validateToken() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return { valid: false, expiresIn: 0, claims: {} };
+    const token = localStorage.getItem('rf_token');
+    if (!token) return { valid: false, expiresIn: 0, claims: {} };
 
-    const expiresAt = session.expires_at * 1000; // Supabase uses seconds
-    const now = Date.now();
-    const expiresIn = expiresAt - now;
-
-    return {
-        valid: expiresIn > 0,
-        expiresIn,
-        claims: session.user || {},
-        issuedAt: 0, // Not exposed directly easily without decoding
-        expiresAt
-    };
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const expiresAt = payload.exp * 1000;
+        const expiresIn = expiresAt - Date.now();
+        return {
+            valid: expiresIn > 0,
+            expiresIn,
+            claims: payload,
+            expiresAt,
+        };
+    } catch {
+        return { valid: false, expiresIn: 0, claims: {} };
+    }
 }
 
-/**
- * Generate secure authorization headers for API calls.
- * 
- * @returns {Promise<Object>} Headers object with Bearer token
- */
 export async function getAuthHeaders() {
     const token = await getSecureToken();
     if (!token) return {};
-
-    return {
-        'Authorization': `Bearer ${token}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY, // Often needed for Supabase REST
-        'X-Client-Version': '1.0.0'
-    };
+    return { Authorization: `Bearer ${token}` };
 }
 
-// Session timer is handled by Supabase auto-refresh mostly, 
-// but we can keep the inactivity timer if desired.
-// For brevity, removing complex inactivity logic unless explicitly requested 
-// since Supabase handles session recovery well.
-
-export default {
-    getSecureToken,
-    validateToken,
-    getAuthHeaders
-};
-
+export default { getSecureToken, validateToken, getAuthHeaders };

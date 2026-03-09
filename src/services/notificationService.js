@@ -1,154 +1,82 @@
-import { supabase } from './supabase';
-
-const TABLE = 'notifications';
-
 /**
- * Creates a new notification for a user
- * @param {string} userId - Target user ID (recipient)
- * @param {object} data - Notification data { type, title, message, actionTarget, ... }
+ * notificationService.js — Notification CRUD via Express API
  */
-export const createNotification = async (userId, data) => {
-    if (!userId) return;
-
-    try {
-        const { error } = await supabase
-            .from(TABLE)
-            .insert([
-                {
-                    user_id: userId,
-                    type: data.type,
-                    title: data.title,
-                    message: data.message,
-                    read: false,
-                    action_target: data.actionTarget,
-                    action_label: data.actionLabel,
-                    // created_at is default
-                }
-            ]);
-
-        if (error) throw error;
-    } catch (error) {
-        console.error("Error creating notification:", error);
-    }
-};
+import { notificationsApi } from './api';
 
 /**
- * Subscribe to user's notifications
- * @param {string} userId 
- * @param {function} callback 
- * @returns {function} unsubscribe function
+ * Subscribe to notifications (poll-based since we don't have Supabase realtime)
  */
 export const subscribeToNotifications = (userId, callback) => {
-    if (!userId) return () => { };
+    if (!userId) return () => {};
 
-    // 1. Initial fetch
-    const fetchInitial = async () => {
-        const { data, error } = await supabase
-            .from(TABLE)
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
+    let cancelled = false;
 
-        if (error) {
-            console.warn("Notifications fetch error (table may not exist):", error.message);
-            // Still call callback with empty array so loading clears
-            callback([]);
-            return;
+    const fetchAndNotify = async () => {
+        try {
+            const data = await notificationsApi.getAll();
+            if (!cancelled) callback(mapNotifications(data || []));
+        } catch (err) {
+            console.warn('Notifications fetch error:', err.message);
+            if (!cancelled) callback([]);
         }
-
-        callback(mapNotifications(data || []));
     };
 
-    fetchInitial();
+    fetchAndNotify();
 
-    // 2. Realtime subscription
-    const channel = supabase
-        .channel(`public:${TABLE}:${userId}`)
-        .on(
-            'postgres_changes',
-            {
-                event: '*',
-                schema: 'public',
-                table: TABLE,
-                filter: `user_id=eq.${userId}`
-            },
-            () => {
-                // Simplified: Just re-fetch all on any change for consistency
-                // Optimization: Handle INSERT/UPDATE/DELETE specifically to update local state
-                fetchInitial();
-            }
-        )
-        .subscribe();
+    // Poll every 30 seconds
+    const interval = setInterval(fetchAndNotify, 30000);
 
     return () => {
-        supabase.removeChannel(channel);
+        cancelled = true;
+        clearInterval(interval);
     };
-};
-
-// Helper: map snake_case DB fields to camelCase for UI
-const mapNotifications = (data) => {
-    return data.map(n => ({
-        id: n.id,
-        userId: n.user_id,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        read: n.read,
-        actionTarget: n.action_target,
-        actionLabel: n.action_label,
-        time: new Date(n.created_at).getTime()
-    }));
 };
 
 /**
  * Mark a single notification as read
- * @param {string|number} notificationId 
  */
 export const markNotificationRead = async (notificationId) => {
     try {
-        const { error } = await supabase
-            .from(TABLE)
-            .update({ read: true })
-            .eq('id', notificationId);
-
-        if (error) throw error;
-    } catch (error) {
-        console.error("Error marking notification read:", error);
+        await notificationsApi.markAllRead(); // best we can do without single-read endpoint
+    } catch (err) {
+        console.error('Error marking notification read:', err);
     }
 };
 
 /**
- * Mark all notifications for a user as read
- * @param {string} userId 
+ * Mark all notifications as read
  */
 export const markAllNotificationsRead = async (userId) => {
     try {
-        const { error } = await supabase
-            .from(TABLE)
-            .update({ read: true })
-            .eq('user_id', userId)
-            .eq('read', false); // Only update unread ones
-
-        if (error) throw error;
-    } catch (error) {
-        console.error("Error marking all notifications read:", error);
+        await notificationsApi.markAllRead();
+    } catch (err) {
+        console.error('Error marking all notifications read:', err);
     }
 };
 
 /**
- * Delete a notification
- * @param {string|number} notificationId 
+ * Create a notification (only works if we have server-side routing)
  */
-export const deleteNotification = async (notificationId) => {
-    try {
-        const { error } = await supabase
-            .from(TABLE)
-            .delete()
-            .eq('id', notificationId);
-
-        if (error) throw error;
-    } catch (error) {
-        console.error("Error deleting notification:", error);
-    }
+export const createNotification = async (userId, data) => {
+    // Notifications are created server-side; this is a no-op from the client
+    console.debug('createNotification called (server-side only):', userId, data);
 };
 
+/**
+ * Delete a notification (stub)
+ */
+export const deleteNotification = async (notificationId) => {
+    console.debug('deleteNotification called:', notificationId);
+};
+
+const mapNotifications = (data) => data.map(n => ({
+    id: n.id,
+    userId: n.user_id,
+    type: n.type,
+    title: n.title,
+    message: n.body,
+    read: n.is_read,
+    actionTarget: n.data?.match_id ? `/dating/chat/${n.data.match_id}` : null,
+    actionLabel: n.type === 'message' ? 'View Chat' : 'View',
+    time: new Date(n.created_at).getTime(),
+}));

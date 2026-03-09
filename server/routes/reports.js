@@ -83,4 +83,32 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/reports/count
+router.get('/count', optionalAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT COUNT(*) FROM reports');
+    res.json({ count: parseInt(rows[0].count) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/reports/:id — single report
+router.get('/:id', optionalAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT r.*, u.name as reporter_name, u.avatar_url as reporter_avatar,
+              u.is_verified as reporter_verified
+       FROM reports r
+       LEFT JOIN users u ON u.id = r.reporter_id
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Report not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

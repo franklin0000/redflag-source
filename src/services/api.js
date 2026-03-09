@@ -202,6 +202,48 @@ export const notificationsApi = {
   getUnreadCount: () => request('/api/notifications/unread-count'),
 };
 
+// ── SEARCHES ──────────────────────────────────────────────────
+export const searchesApi = {
+  getAll: (limit = 10) => request(`/api/searches?limit=${limit}`),
+  getCount: () => request('/api/searches/count'),
+  create: (query, results) =>
+    request('/api/searches', { method: 'POST', body: JSON.stringify({ query, results }) }),
+};
+
+// ── STATS ──────────────────────────────────────────────────────
+export const statsApi = {
+  community: () => request('/api/stats/community'),
+  dashboard: () => request('/api/stats/dashboard'),
+  activity: () => request('/api/stats/activity'),
+};
+
+// ── AUTH EXTRAS ────────────────────────────────────────────────
+export const authExtras = {
+  forgotPassword: (email) =>
+    request('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (token, password) =>
+    request('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+  changePassword: (current_password, new_password) =>
+    request('/api/auth/password', {
+      method: 'PATCH',
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+};
+
+// ── USER EXTRAS ────────────────────────────────────────────────
+export const userExtras = {
+  getSettings: () => request('/api/users/me/settings'),
+  updateSettings: (settings) =>
+    request('/api/users/me/settings', { method: 'PATCH', body: JSON.stringify(settings) }),
+  deleteAccount: () => request('/api/users/me', { method: 'DELETE' }),
+  getBlocked: () => request('/api/users/blocked'),
+  blockUser: (id) => request(`/api/users/block/${id}`, { method: 'POST' }),
+  unblockUser: (id) => request(`/api/users/block/${id}`, { method: 'DELETE' }),
+  getMuteStatus: (matchId) => request(`/api/users/mute/${matchId}`),
+  muteChat: (matchId) => request(`/api/users/mute/${matchId}`, { method: 'POST' }),
+  unmuteChat: (matchId) => request(`/api/users/mute/${matchId}`, { method: 'DELETE' }),
+};
+
 // ── FILE UPLOAD (generic) ─────────────────────────────────────
 export async function uploadFile(file, folder = 'media') {
   const form = new FormData();

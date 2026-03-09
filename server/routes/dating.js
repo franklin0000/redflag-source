@@ -246,4 +246,20 @@ router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/dating/messages/:matchId/all — clear chat history
+router.delete('/messages/:matchId/all', requireAuth, async (req, res) => {
+  try {
+    // Verify user is in this match
+    const { rows } = await db.query(
+      'SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
+      [req.params.matchId, req.user.id]
+    );
+    if (!rows.length) return res.status(403).json({ error: 'Not authorized' });
+    await db.query('DELETE FROM messages WHERE match_id = $1', [req.params.matchId]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

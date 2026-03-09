@@ -1,8 +1,7 @@
-import React, { Suspense, useEffect } from 'react';
-import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import React, { Suspense } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import BottomNav from './components/BottomNav';
-import { supabase } from './services/supabase';
 
 // Lazy-loaded pages for code splitting
 const Home = React.lazy(() => import('./pages/Home'));
@@ -66,18 +65,6 @@ const NO_BOTTOM_NAV = ['/login', '/signup', '/forgot-password', '/reset-password
 
 function AppShell({ children }) {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
-
-  // Redirect to /reset-password when Supabase fires PASSWORD_RECOVERY
-  // This handles the case where the user lands on / after clicking the email link
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        navigate('/reset-password');
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
 
   const hideNav = NO_BOTTOM_NAV.includes(pathname)
     || pathname.startsWith('/chat/')        // ChatRoom has own fixed input

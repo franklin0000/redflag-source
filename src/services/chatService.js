@@ -6,7 +6,7 @@ const BASE = import.meta.env.VITE_API_URL || '';
 
 let socket = null;
 
-function getSocket() {
+export function getSocket() {
     if (!socket || socket.disconnected) {
         socket = io(BASE || window.location.origin, {
             auth: { token: authApi.getToken() },

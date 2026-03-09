@@ -2,16 +2,20 @@ const router = require('express').Router();
 const db = require('../db');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
 
-// GET /api/posts — community feed
+// GET /api/posts — community feed (optional user_id filter)
 router.get('/', optionalAuth, async (req, res) => {
-  const { limit = 20, offset = 0 } = req.query;
+  const { limit = 20, offset = 0, user_id } = req.query;
   try {
+    const params = [limit, offset];
+    const where = user_id ? 'WHERE p.user_id = $3' : '';
+    if (user_id) params.push(user_id);
     const { rows } = await db.query(
       `SELECT p.*, u.name, u.avatar_url, u.is_verified
        FROM posts p JOIN users u ON u.id = p.user_id
+       ${where}
        ORDER BY p.created_at DESC
        LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      params
     );
     res.json(rows);
   } catch (err) {
