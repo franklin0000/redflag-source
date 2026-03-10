@@ -196,6 +196,11 @@ io.on('connection', (socket) => {
     socket.to(`match:${matchId}`).emit('call:end');
   });
 
+  // Live Radar — location sharing
+  socket.on('location:update', ({ matchId, lat, lng }) => {
+    socket.to(`match:${matchId}`).emit('location:update', { userId, lat, lng });
+  });
+
   socket.on('disconnect', () => {
     onlineUsers.delete(userId);
     console.log(`User ${socket.user.name} disconnected`);

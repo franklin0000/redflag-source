@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDating } from '../context/DatingContext';
 import { useToast } from '../context/ToastContext';
 import { watchLocation, isGeolocationSupported } from '../services/locationService';
-import { supabase } from '../services/supabase';
+import { getSocket } from '../services/chatService';
 import Map, { Marker } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -18,7 +18,6 @@ export default function LiveDateRadar() {
     const { matches } = useDating();
     const toast = useToast();
 
-    // Map container ref
     const mapRef = useRef(null);
     const stopWatchRef = useRef(null);
 
@@ -32,102 +31,66 @@ export default function LiveDateRadar() {
     const [myLoc, setMyLoc] = useState(null);
     const [matchLoc, setMatchLoc] = useState(null);
 
-    // Find who we are sharing with
-    // matchId is usually user.id_target.id sorted. So we need to find the target from context
-    // The DatingContext matches list has the individual target user objects.
-    // If we used the sorted matchId, targetUserId is the part that is NOT user.id
-    const targetUserId = matchId.split('_').find(id => id !== user.id);
+    const targetUserId = matchId.split('_').find(id => id !== user?.id);
     const match = matches.find(m => m.id === targetUserId) || { name: 'Match' };
 
-    // Bounds fitting effect
+    // Fit map bounds when both locations are known
     useEffect(() => {
         if (!mapRef.current || !myLoc || !matchLoc) return;
 
-        let minLng = Math.min(myLoc.lng, matchLoc.lng);
-        let maxLng = Math.max(myLoc.lng, matchLoc.lng);
-        let minLat = Math.min(myLoc.lat, matchLoc.lat);
-        let maxLat = Math.max(myLoc.lat, matchLoc.lat);
-
-        const lngPadding = (maxLng - minLng) * 0.2 || 0.01;
-        const latPadding = (maxLat - minLat) * 0.2 || 0.01;
+        const minLng = Math.min(myLoc.lng, matchLoc.lng);
+        const maxLng = Math.max(myLoc.lng, matchLoc.lng);
+        const minLat = Math.min(myLoc.lat, matchLoc.lat);
+        const maxLat = Math.max(myLoc.lat, matchLoc.lat);
+        const lngPad = (maxLng - minLng) * 0.2 || 0.01;
+        const latPad = (maxLat - minLat) * 0.2 || 0.01;
 
         try {
             mapRef.current.fitBounds(
-                [
-                    [minLng - lngPadding, minLat - latPadding],
-                    [maxLng + lngPadding, maxLat + latPadding]
-                ],
+                [[minLng - lngPad, minLat - latPad], [maxLng + lngPad, maxLat + latPad]],
                 { padding: 50, duration: 1000 }
             );
         } catch (e) {
-            console.warn("Bounds fitting error:", e);
+            console.warn('fitBounds error:', e);
         }
     }, [myLoc, matchLoc]);
 
-    // Send location to Supabase DB
-    const updateMyTracking = async (coords) => {
-        if (!user?.id || !matchId) return;
-
-        // Upsert tracking data
-        const { error } = await supabase.from('date_tracking').upsert({
-            user_id: user.id,
-            match_id: matchId,
-            lat: coords.lat,
-            lng: coords.lng,
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,match_id' });
-
-        if (error) {
-            console.warn("Failed to update tracking info in DB:", error);
-        }
-    };
-
-    // Start Location Sharing + realtime subscription (combined for clean deps)
+    // GPS watch + Socket.io location sharing
     useEffect(() => {
         if (!isGeolocationSupported()) {
             setLocationError('GPS not supported in this browser');
             return;
         }
 
-        toast.info("Radar scanning for your location...");
+        toast.info('Radar scanning for your location...');
 
+        const socket = getSocket();
+
+        // Join the match room
+        socket.emit('join_match', matchId);
+
+        // Listen for partner location updates
+        socket.on('location:update', ({ lat, lng }) => {
+            setMatchLoc({ lat, lng });
+        });
+
+        // Watch my GPS and broadcast via socket
         stopWatchRef.current = watchLocation(
             (coords) => {
                 setLocationError(null);
                 setMyLoc(coords);
                 setViewState(prev => ({ ...prev, latitude: coords.lat, longitude: coords.lng }));
-                updateMyTracking(coords);
+                socket.emit('location:update', { matchId, lat: coords.lat, lng: coords.lng });
             },
-            () => {
-                setLocationError("GPS signal lost");
-            }
+            () => setLocationError('GPS signal lost')
         );
-
-        // Subscribe to MATCH location updates
-        let channel;
-        if (targetUserId && matchId) {
-            channel = supabase
-                .channel(`tracking:${matchId}`)
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: 'date_tracking', filter: `match_id=eq.${matchId}` },
-                    (payload) => {
-                        const row = payload.new;
-                        if (row && row.user_id !== user?.id) {
-                            setMatchLoc({ lat: row.lat, lng: row.lng });
-                        }
-                    }
-                )
-                .subscribe();
-        }
 
         return () => {
             if (stopWatchRef.current) stopWatchRef.current();
-            if (channel) supabase.removeChannel(channel);
+            socket.off('location:update');
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [targetUserId, matchId, user?.id]);
-
+    }, [matchId, user?.id]);
 
     return (
         <div className="flex flex-col h-screen bg-black text-white relative">
@@ -143,7 +106,7 @@ export default function LiveDateRadar() {
                     </h1>
                     <p className="text-xs text-gray-300">En route to date</p>
                 </div>
-                <div className="w-10"></div> {/* Spacer */}
+                <div className="w-10"></div>
             </div>
 
             {/* Mapbox Container */}
@@ -161,7 +124,6 @@ export default function LiveDateRadar() {
                         mapboxAccessToken={MAPBOX_TOKEN}
                         style={{ width: '100%', height: '100%' }}
                     >
-                        {/* My Marker */}
                         {myLoc && (
                             <Marker longitude={myLoc.lng} latitude={myLoc.lat} anchor="center">
                                 <div className="relative flex items-center justify-center w-16 h-16">
@@ -172,7 +134,6 @@ export default function LiveDateRadar() {
                             </Marker>
                         )}
 
-                        {/* Match Marker */}
                         {matchLoc && (
                             <Marker longitude={matchLoc.lng} latitude={matchLoc.lat} anchor="center">
                                 <div className="relative flex items-center justify-center w-16 h-16">
@@ -186,9 +147,8 @@ export default function LiveDateRadar() {
                 )}
             </div>
 
-            {/* Bottom Panel Overlay */}
+            {/* Bottom Panel */}
             <div className="absolute bottom-6 inset-x-4 z-10 flex flex-col gap-4">
-                {/* Warning / Error */}
                 {locationError && (
                     <div className="bg-red-900/80 border border-red-500 rounded-xl p-3 text-sm flex items-center gap-2 backdrop-blur-md">
                         <span className="material-icons text-red-400">warning</span>
@@ -196,7 +156,6 @@ export default function LiveDateRadar() {
                     </div>
                 )}
 
-                {/* Status Bar */}
                 <div className="bg-gray-900/90 border border-white/10 p-4 rounded-2xl shadow-2xl backdrop-blur-lg flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <div className="relative">
