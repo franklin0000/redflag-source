@@ -57,7 +57,7 @@ async function request(path, options = {}) {
 
   if (res.status === 204) return null;
   const text = await res.text();
-  if (!text || !text.trim()) return null;
+  if (!text || !text.trim()) throw new Error('Server is waking up. Please try again in a moment.');
   try {
     return JSON.parse(text);
   } catch {
