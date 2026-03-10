@@ -48,6 +48,11 @@ app.use('/api/stats',         require('./routes/stats'));
 
 // ── File Upload (any route) ───────────────────────────────────
 const upload = require('./middleware/upload');
+const { UPLOAD_DIR } = require('./middleware/upload');
+
+// Serve uploaded files publicly
+app.use('/api/files', express.static(UPLOAD_DIR));
+
 app.post('/api/upload', require('./middleware/auth').requireAuth, upload.single('file'), (req, res) => {
   if (!req.fileUrl) return res.status(400).json({ error: 'Upload failed' });
   res.json({ url: req.fileUrl });

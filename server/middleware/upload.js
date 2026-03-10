@@ -1,54 +1,70 @@
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
-const streamifier = require('streamifier');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+// Use /tmp for writable storage on Render (ephemeral but works)
+const UPLOAD_DIR = process.env.UPLOAD_DIR || '/tmp/rf_uploads';
+
+// Ensure upload directory exists
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+const ALLOWED_TYPES = [
+  // Images
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic',
+  // Documents
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'video/mp4', 'video/quicktime', 'video/webm',
+];
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const uid = crypto.randomBytes(12).toString('hex');
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${uid}${ext}`);
+  },
 });
 
-const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
   fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('Only image files allowed'), false);
+    if (!ALLOWED_TYPES.includes(file.mimetype)) {
+      return cb(new Error(`File type not allowed: ${file.mimetype}`), false);
     }
     cb(null, true);
   },
 });
 
-// Middleware: after multer, upload buffer to Cloudinary
-const uploadToCloudinary = (req, res, next) => {
-  if (!req.file) return next();
-  const folder = req.body.folder || 'redflag';
-  const stream = cloudinary.uploader.upload_stream(
-    { folder, resource_type: 'image', quality: 'auto', fetch_format: 'auto' },
-    (error, result) => {
-      if (error) return next(new Error('Cloudinary upload failed: ' + error.message));
-      req.fileUrl = result.secure_url;
-      req.filePublicId = result.public_id;
-      next();
-    }
-  );
-  streamifier.createReadStream(req.file.buffer).pipe(stream);
-};
+const BASE_URL = process.env.RENDER_EXTERNAL_URL ||
+                 process.env.VITE_API_URL ||
+                 'https://redflag-source.onrender.com';
 
-// Combined middleware
+// Combined middleware: multer + attach public URL
 const uploadMiddleware = (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
-    uploadToCloudinary(req, res, next);
+    if (req.file) {
+      req.fileUrl = `${BASE_URL}/api/files/${req.file.filename}`;
+    }
+    next();
   });
 };
 
 uploadMiddleware.single = (fieldName) => (req, res, next) => {
   upload.single(fieldName)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
-    uploadToCloudinary(req, res, next);
+    if (req.file) {
+      req.fileUrl = `${BASE_URL}/api/files/${req.file.filename}`;
+    }
+    next();
   });
 };
 
 module.exports = uploadMiddleware;
+module.exports.UPLOAD_DIR = UPLOAD_DIR;
