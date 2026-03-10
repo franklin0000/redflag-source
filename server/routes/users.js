@@ -3,6 +3,22 @@ const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
+// GET /api/users/me — return current user profile
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name, username, avatar_url, bio, is_paid, is_verified,
+              is_verified_web3, safety_score, location, created_at, last_seen, settings
+       FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'User not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/users/:id
 router.get('/:id', requireAuth, async (req, res) => {
   try {
