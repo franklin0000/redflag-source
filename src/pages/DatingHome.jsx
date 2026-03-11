@@ -123,17 +123,36 @@ export default function DatingHome() {
                 </button>
             </div>
 
-            <div className="flex items-center gap-2 px-4 py-1 bg-black/40 backdrop-blur-md rounded-full border border-purple-500/30 cursor-pointer hover:bg-black/60 transition-colors"
-                onClick={() => setIsLocationModalOpen(true)}>
-                <span className="material-icons text-purple-400 text-sm">location_on</span>
-                <span className="text-xs font-bold text-gray-200 tracking-wider truncate max-w-[150px]">
-                    {searchMode === 'global' ? '🌍 World' : searchLocationName}
-                </span>
-                <span className="material-icons text-gray-400 text-sm">expand_more</span>
+            {/* Location pill — tap city name → modal; tap globe/pin → toggle local/global */}
+            <div className="flex items-center bg-black/40 backdrop-blur-md rounded-full border border-purple-500/30 overflow-hidden">
+                <button
+                    onClick={() => setIsLocationModalOpen(true)}
+                    className="flex items-center gap-1 pl-3 pr-2 py-1.5 hover:bg-white/10 transition-colors"
+                >
+                    <span className="material-icons text-purple-400 text-sm">location_on</span>
+                    <span className="text-xs font-bold text-gray-200 tracking-wider truncate max-w-[90px]">
+                        {searchMode === 'global' ? 'World' : searchLocationName}
+                    </span>
+                </button>
+                <button
+                    onClick={() => {
+                        const newMode = searchMode === 'local' ? 'global' : 'local';
+                        setSearchMode(newMode);
+                        toast.info(newMode === 'global' ? '🌍 Global search' : '📍 Local search', { autoClose: 2000 });
+                        if (newMode === 'local' && !customCoords.lat) setSearchLocationName('My Location');
+                        fetchMatches(newMode, customCoords.lat, customCoords.lng);
+                        setCurrentIndex(0);
+                    }}
+                    className={`pl-2 pr-3 py-1.5 border-l transition-colors ${searchMode === 'global' ? 'border-blue-500/50 text-blue-400 bg-blue-600/20' : 'border-gray-600/30 text-gray-400 hover:text-white'}`}
+                    title={searchMode === 'global' ? 'Switch to Local' : 'Switch to Global'}
+                    aria-label="Toggle search scope"
+                >
+                    <span className="material-icons text-sm">{searchMode === 'global' ? 'public' : 'near_me'}</span>
+                </button>
             </div>
 
             {/* Utilities: Dating Mode + Guard + Ghost */}
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
                 <button
                     onClick={toggleMode}
                     className={`p-2 rounded-full transition-all flex items-center justify-center ${isDatingMode ? 'bg-dating-accent text-white animate-glow' : 'bg-black/40 text-gray-400 hover:text-white border border-gray-600/30'}`}
@@ -141,23 +160,6 @@ export default function DatingHome() {
                     aria-label="Toggle Dating Mode"
                 >
                     <span className={`material-icons text-sm ${isDatingMode ? 'animate-heart-pulse' : ''}`}>{isDatingMode ? 'favorite' : 'favorite_border'}</span>
-                </button>
-                <button
-                    onClick={() => {
-                        const newMode = searchMode === 'local' ? 'global' : 'local';
-                        setSearchMode(newMode);
-                        toast.info(`Switched to ${newMode.toUpperCase()} search`, { autoClose: 2000 });
-                        // Reset location name if we switch to local and have no custom coords
-                        if (newMode === 'local' && !customCoords.lat) {
-                            setSearchLocationName('My Location');
-                        }
-                        fetchMatches(newMode, customCoords.lat, customCoords.lng);
-                        setCurrentIndex(0);
-                    }}
-                    className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${searchMode === 'global' ? 'bg-blue-600/80 text-white shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-black/40 text-gray-400 hover:text-white border border-gray-600/30'}`}
-                >
-                    <span className="material-icons text-[14px]">{searchMode === 'global' ? 'public' : 'near_me'}</span>
-                    {searchMode === 'global' ? 'GLOBAL' : 'LOCAL'}
                 </button>
                 <button
                     onClick={() => navigate('/dating/checkin')}
