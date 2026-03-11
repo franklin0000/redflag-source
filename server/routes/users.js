@@ -19,6 +19,21 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/users/blocked — MUST be before /:id wildcard to avoid mis-routing
+router.get('/blocked', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT u.id, u.name, u.username, u.avatar_url
+       FROM blocked_users b JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = $1`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/users/:id
 router.get('/:id', requireAuth, async (req, res) => {
   try {
@@ -114,21 +129,6 @@ router.patch('/me/settings', requireAuth, async (req, res) => {
       [JSON.stringify(req.body), req.user.id]
     );
     res.json(rows[0].settings);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/users/blocked
-router.get('/blocked', requireAuth, async (req, res) => {
-  try {
-    const { rows } = await db.query(
-      `SELECT u.id, u.name, u.username, u.avatar_url
-       FROM blocked_users b JOIN users u ON u.id = b.blocked_id
-       WHERE b.blocker_id = $1`,
-      [req.user.id]
-    );
-    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

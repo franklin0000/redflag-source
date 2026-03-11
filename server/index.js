@@ -36,6 +36,36 @@ app.use(express.static(DIST, {
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', version: '2.0' }));
 
+// ── FaceCheck.id Proxy (production) ───────────────────────────
+// In dev, Vite proxies these paths directly to facecheck.id.
+// In production on Render, Express must proxy them server-side.
+const FACECHECK_BASE = 'https://facecheck.id';
+
+app.post('/api/upload_pic', (req, res) => {
+  const headers = {};
+  if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
+  if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
+  fetch(`${FACECHECK_BASE}/api/upload_pic`, { method: 'POST', headers, body: req })
+    .then(r => r.json())
+    .then(data => res.json(data))
+    .catch(err => res.status(500).json({ error: err.message }));
+});
+
+app.post('/api/search', (req, res) => {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
+  fetch(`${FACECHECK_BASE}/api/search`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req.body),
+  })
+    .then(r => r.json())
+    .then(data => res.json(data))
+    .catch(err => res.status(500).json({ error: err.message }));
+});
+
 // ── API Routes ────────────────────────────────────────────────
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/users',         require('./routes/users'));

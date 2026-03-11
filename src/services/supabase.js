@@ -215,6 +215,9 @@ class QueryBuilder {
           const r = await apiRequest('/api/stats/community');
           return Array(r.totalReports).fill(null);
         }
+        if (f.id) {
+          return apiRequest(`/api/reports/${f.id}`);
+        }
         if (f.reporter_id || f.user_id) {
           return apiRequest('/api/reports/me');
         }

@@ -425,15 +425,15 @@ function RecentReportsList() {
             className="min-w-[140px] relative rounded-xl overflow-hidden aspect-[3/4] group cursor-pointer"
         >
             <img
-                alt={report.name}
+                alt={report.reported_name || report.name || 'Report'}
                 className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity blur-[2px]"
-                src={report.photos && report.photos.length > 0 ? report.photos[0] : 'https://via.placeholder.com/150'}
+                src={(report.evidence_urls || report.photos || []).length > 0 ? (report.evidence_urls || report.photos)[0] : 'https://via.placeholder.com/150'}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 flex flex-col justify-end">
                 <div className="bg-orange-500/20 text-orange-400 text-[10px] font-bold px-2 py-0.5 rounded w-max mb-1 border border-orange-500/30">
                     {report.severity === 'high' ? 'FLAGGED' : 'REVIEW'}
                 </div>
-                <p className="text-xs font-bold text-white truncate">{report.name}</p>
+                <p className="text-xs font-bold text-white truncate">{report.reported_name || report.name || 'Unknown'}</p>
                 <p className="text-[10px] text-gray-300 truncate">{new Date(report.createdAt).toLocaleDateString()}</p>
             </div>
         </div>

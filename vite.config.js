@@ -106,10 +106,22 @@ export default defineConfig({
   server: {
     allowedHosts: true,
     proxy: {
-      '/api': {
+      // FaceCheck.id face-scan API — specific paths only (avoids conflicting with Express /api/*)
+      '/api/upload_pic': {
         target: 'https://facecheck.id',
         changeOrigin: true,
         secure: true,
+      },
+      '/api/search': {
+        target: 'https://facecheck.id',
+        changeOrigin: true,
+        secure: true,
+      },
+      // Proxy all other /api/* calls to local Express backend in dev
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
       },
       '/pimeyes-api': {
         target: 'https://pimeyes.com',
