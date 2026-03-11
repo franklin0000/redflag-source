@@ -145,18 +145,13 @@ app.post('/api/sumsub-token', require('./middleware/auth').requireAuth, async (r
 // ── Socket.io — Real-time Chat ────────────────────────────────
 const onlineUsers = new Map(); // userId -> socketId
 
-// Anonymous chat state (in-memory, expires in 24h)
-const anonRooms = {
-  women: [],
-  men: []
-};
-
-// Housekeeping every hour
-setInterval(() => {
-  const now = Date.now();
-  ['women', 'men'].forEach(r => {
-    anonRooms[r] = (anonRooms[r] || []).filter(m => (now - new Date(m.timestamp).getTime()) < 24 * 60 * 60 * 1000);
-  });
+// Housekeeping every hour — purge anon messages older than 24h
+setInterval(async () => {
+  try {
+    await db.query("DELETE FROM anon_messages WHERE created_at < NOW() - INTERVAL '24 hours'");
+  } catch (err) {
+    console.error('anon_messages cleanup error:', err.message);
+  }
 }, 60 * 60 * 1000);
 
 io.use(async (socket, next) => {
@@ -241,21 +236,32 @@ io.on('connection', (socket) => {
   });
 
   // Anonymous Chat Handlers
-  socket.on('join_anon', (room) => {
+  socket.on('join_anon', async (room) => {
     socket.join(`anon:${room}`);
-    socket.emit('anon_history', anonRooms[room] || []);
+    try {
+      const { rows } = await db.query(
+        "SELECT * FROM anon_messages WHERE room=$1 AND created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at ASC LIMIT 200",
+        [room]
+      );
+      socket.emit('anon_history', rows.map(r => ({ ...r, timestamp: r.created_at })));
+    } catch (err) {
+      console.error('join_anon error:', err.message);
+      socket.emit('anon_history', []);
+    }
   });
 
-  socket.on('send_anon_message', (msg) => {
+  socket.on('send_anon_message', async (msg) => {
     const { room, text, nickname, avatar, attachment, type } = msg;
-    const message = {
-      id: crypto.randomUUID(),
-      text, nickname, avatar, attachment, type,
-      timestamp: new Date().toISOString()
-    };
-    if (!anonRooms[room]) anonRooms[room] = [];
-    anonRooms[room].push(message);
-    io.to(`anon:${room}`).emit('new_anon_message', message);
+    try {
+      const { rows } = await db.query(
+        'INSERT INTO anon_messages (room, text, nickname, avatar, attachment, type) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+        [room, text, nickname || null, avatar || null, attachment || null, type || 'text']
+      );
+      const message = { ...rows[0], timestamp: rows[0].created_at };
+      io.to(`anon:${room}`).emit('new_anon_message', message);
+    } catch (err) {
+      console.error('send_anon_message error:', err.message);
+    }
   });
 
   // Guardian session room — join to receive real-time updates

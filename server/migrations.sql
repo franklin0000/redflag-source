@@ -43,3 +43,16 @@ ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS profile_data JSONB DEFAULT 
 
 -- Index for searches
 CREATE INDEX IF NOT EXISTS idx_searches_user ON searches(user_id, created_at DESC);
+
+-- Anonymous chat messages (replaces in-memory anonRooms)
+CREATE TABLE IF NOT EXISTS anon_messages (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  room        TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  nickname    TEXT,
+  avatar      TEXT,
+  attachment  TEXT,
+  type        TEXT DEFAULT 'text',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_anon_messages_room ON anon_messages(room, created_at ASC);

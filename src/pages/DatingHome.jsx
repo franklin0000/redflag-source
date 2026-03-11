@@ -9,7 +9,7 @@ import AdComponent from '../components/AdComponent';
 import LocationSearchModal from '../components/Dating/LocationSearchModal';
 
 export default function DatingHome() {
-    const { potentialMatches, fetchMatches, swipeProfile, loading } = useDating();
+    const { potentialMatches, fetchMatches, swipeProfile, loading, isDatingMode, toggleMode } = useDating();
     const toast = useToast();
     const navigate = useNavigate();
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -102,8 +102,16 @@ export default function DatingHome() {
                 <span className="material-icons text-gray-400 text-sm">expand_more</span>
             </div>
 
-            {/* Utilities: Guard & Ghost */}
+            {/* Utilities: Dating Mode + Guard + Ghost */}
             <div className="flex gap-2">
+                <button
+                    onClick={toggleMode}
+                    className={`p-2 rounded-full transition-colors flex items-center justify-center ${isDatingMode ? 'bg-pink-600 text-white shadow-[0_0_15px_rgba(219,39,119,0.5)]' : 'bg-black/40 text-gray-400 hover:text-white border border-gray-600/30'}`}
+                    title={isDatingMode ? 'Dating Mode ON' : 'Dating Mode OFF'}
+                    aria-label="Toggle Dating Mode"
+                >
+                    <span className="material-icons text-sm">{isDatingMode ? 'favorite' : 'favorite_border'}</span>
+                </button>
                 <button
                     onClick={() => {
                         const newMode = searchMode === 'local' ? 'global' : 'local';
