@@ -189,12 +189,29 @@ export default function DatingHome() {
                     <span className="material-icons text-4xl text-purple-500">radar</span>
                 </div>
                 <h2 className="text-2xl font-bold mb-2">No more profiles</h2>
+                <p className="text-gray-400 text-sm mb-6">Try switching to Global search or change your location</p>
                 <button
-                    onClick={() => { fetchMatches(searchMode); setCurrentIndex(0); }}
+                    onClick={() => { fetchMatches(searchMode, customCoords.lat, customCoords.lng); setCurrentIndex(0); }}
                     className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-bold shadow-lg"
                 >
                     Search Again
                 </button>
+                <LocationSearchModal
+                    isOpen={isLocationModalOpen}
+                    onClose={() => setIsLocationModalOpen(false)}
+                    onLocationSelect={(lat, lng, cityName) => {
+                        setCustomCoords({ lat, lng });
+                        setSearchLocationName(cityName);
+                        if (searchMode === 'global') {
+                            setSearchMode('local');
+                            toast.success(`Flying to ${cityName}... ✈️`);
+                        } else {
+                            toast.success(`Location set to ${cityName}`);
+                        }
+                        setCurrentIndex(0);
+                        fetchMatches('local', lat, lng);
+                    }}
+                />
             </div>
         );
     }
