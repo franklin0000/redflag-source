@@ -26,7 +26,37 @@ export default function DatingHome() {
     const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
     useEffect(() => {
-        fetchMatches(searchMode, customCoords.lat, customCoords.lng); // Pass custom coordinates
+        // Auto-detect user location and reverse geocode city name
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                    const { latitude, longitude } = pos.coords;
+                    setCustomCoords({ lat: latitude, lng: longitude });
+                    fetchMatches('local', latitude, longitude);
+                    try {
+                        const token = import.meta.env.VITE_MAPBOX_TOKEN;
+                        if (token) {
+                            const res = await fetch(
+                                `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?types=place&access_token=${token}`
+                            );
+                            const data = await res.json();
+                            const city = data.features?.[0]?.text || data.features?.[0]?.place_name?.split(',')[0];
+                            if (city) setSearchLocationName(city);
+                        }
+                    } catch {
+                        // Keep default label if geocoding fails
+                    }
+                },
+                () => {
+                    // Permission denied or unavailable — use server default
+                    fetchMatches(searchMode, null, null);
+                },
+                { timeout: 8000, maximumAge: 60000 }
+            );
+        } else {
+            fetchMatches(searchMode, customCoords.lat, customCoords.lng);
+        }
+
         const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
