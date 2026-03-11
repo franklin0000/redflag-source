@@ -111,4 +111,54 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 });
 
+// ── Comments on reports ───────────────────────────────────────
+
+// GET /api/reports/:id/comments
+router.get('/:id/comments', optionalAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT c.*, u.name as user_name, u.avatar_url as user_avatar
+       FROM comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.report_id = $1
+       ORDER BY c.created_at ASC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/reports/:id/comments
+router.post('/:id/comments', requireAuth, async (req, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: 'content required' });
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO comments (user_id, report_id, content)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.user.id, req.params.id, content.trim()]
+    );
+    const comment = { ...rows[0], user_name: req.user.name, user_avatar: req.user.avatar_url };
+    res.status(201).json(comment);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/reports/:id/comments/:commentId/upvote
+router.post('/:id/comments/:commentId/upvote', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'UPDATE comments SET upvotes = upvotes + 1 WHERE id = $1 AND report_id = $2 RETURNING upvotes',
+      [req.params.commentId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Comment not found' });
+    res.json({ upvotes: rows[0].upvotes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

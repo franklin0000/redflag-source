@@ -100,4 +100,40 @@ router.post('/:id/reply', requireAuth, async (req, res) => {
   }
 });
 
+// ── Comments on posts ─────────────────────────────────────────
+
+// GET /api/posts/:id/comments
+router.get('/:id/comments', optionalAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT c.*, u.name as user_name, u.avatar_url as user_avatar
+       FROM comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.post_id = $1
+       ORDER BY c.created_at ASC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/posts/:id/comments
+router.post('/:id/comments', requireAuth, async (req, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: 'content required' });
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO comments (user_id, post_id, content)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.user.id, req.params.id, content.trim()]
+    );
+    const comment = { ...rows[0], user_name: req.user.name, user_avatar: req.user.avatar_url };
+    res.status(201).json(comment);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

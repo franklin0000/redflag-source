@@ -372,15 +372,14 @@ export default function Home() {
     );
 }
 
-// Log search to Supabase for stats tracking
-async function logSearch(userId, searchQuery, searchType) {
-    if (!userId) return;
+// Log search to API for stats tracking
+async function logSearch(_userId, searchQuery, searchType) {
     try {
-        const { supabase } = await import('../services/supabase');
-        await supabase.from('searches').insert({
-            user_id: userId,
-            query: searchType ? `[${searchType}] ${searchQuery}` : searchQuery,
-        });
+        const { searchesApi } = await import('../services/api');
+        await searchesApi.create(
+            searchType ? `[${searchType}] ${searchQuery}` : searchQuery,
+            0
+        );
     } catch (err) {
         console.warn('Failed to log search:', err);
     }

@@ -182,6 +182,7 @@ export const postsApi = {
 export const reportsApi = {
   getReports: (limit = 20, offset = 0, category) =>
     request(`/api/reports?limit=${limit}&offset=${offset}${category ? `&category=${category}` : ''}`),
+  getReport: (id) => request(`/api/reports/${id}`),
   createReport: (data) =>
     request('/api/reports', { method: 'POST', body: JSON.stringify(data) }),
   getMyReports: () => request('/api/reports/me'),
@@ -199,6 +200,12 @@ export const reportsApi = {
     if (!res.ok) throw new Error('Upload failed');
     return res.json();
   },
+  // Comments
+  getComments: (reportId) => request(`/api/reports/${reportId}/comments`),
+  postComment: (reportId, content) =>
+    request(`/api/reports/${reportId}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
+  upvoteComment: (reportId, commentId) =>
+    request(`/api/reports/${reportId}/comments/${commentId}/upvote`, { method: 'POST' }),
 };
 
 // ── NOTIFICATIONS ─────────────────────────────────────────────

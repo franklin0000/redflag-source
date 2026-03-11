@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { supabase } from '../services/supabase';
+import { reportsApi } from '../services/api';
 import { secureGet } from '../services/secureStorage';
 
 const getTimeAgo = (timestamp) => {
@@ -54,24 +54,21 @@ export default function ReportDetail() {
                     }
                 }
 
-                // 2. Fetch from Supabase
-                const { data, error } = await supabase
-                    .from('reports')
-                    .select('*, user:users(name)') // Join user name
-                    .eq('id', id)
-                    .single();
-
-                if (error) throw error;
+                // 2. Fetch from Express API
+                const data = await reportsApi.getReport(id);
 
                 if (data) {
                     setReport({
                         ...data,
-                        initials: (data.name || 'AN').substring(0, 2).toUpperCase(),
-                        flags: [data.type],
-                        riskLevel: data.severity,
-                        reportCount: 1, // hardcoded for now or fetch count
-                        user: data.user?.name || 'Anonymous',
-                        location: data.location || 'Unknown'
+                        initials: (data.reported_name || 'AN').substring(0, 2).toUpperCase(),
+                        flags: [data.category].filter(Boolean),
+                        riskLevel: 'medium',
+                        reportCount: data.upvotes || 1,
+                        user: data.reporter_name || 'Anonymous',
+                        verified: data.reporter_verified,
+                        location: '',
+                        image: data.evidence_urls?.[0] || null,
+                        timestamp: data.created_at,
                     });
                 }
             } catch (error) {
@@ -96,37 +93,16 @@ export default function ReportDetail() {
         // Supabase Realtime Subscription for comments table
         // We filter by report_id. Note: RLS must allow this.
 
-        // Initial Fetch
+        // Fetch from Express API
         const fetchComments = async () => {
-            const { data } = await supabase
-                .from('comments')
-                .select('*, user:users(name)') // Join with users table
-                .eq('report_id', id)
-                .order('created_at', { ascending: true });
-
-            if (data) setComments(data);
+            try {
+                const data = await reportsApi.getComments(id);
+                if (data) setComments(data.map(c => ({ ...c, user: { name: c.user_name } })));
+            } catch (err) {
+                console.warn('Failed to load comments:', err);
+            }
         };
         fetchComments();
-
-        // Subscription
-        const channel = supabase
-            .channel(`comments:${id}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'comments',
-                filter: `report_id=eq.${id}`
-            }, async (payload) => {
-                // Fetch user data for the new comment
-                const { data: userData } = await supabase.from('users').select('name').eq('id', payload.new.user_id).single();
-                const newComment = { ...payload.new, user: userData };
-                setComments(prev => [...prev, newComment]);
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
     }, [id]);
 
     if (loading) {
@@ -168,12 +144,8 @@ export default function ReportDetail() {
         }
 
         try {
-            await supabase.from('comments').insert({
-                report_id: id,
-                user_id: user?.id,
-                content: newComment.trim(),
-            });
-
+            const comment = await reportsApi.postComment(id, newComment.trim());
+            setComments(prev => [...prev, { ...comment, user: { name: comment.user_name || user?.name } }]);
             setNewComment('');
             toast.success('Comment posted');
             setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -188,13 +160,13 @@ export default function ReportDetail() {
         setUpvoted(prev => ({ ...prev, [commentId]: true }));
 
         try {
-            // Primitive increment
-            const { data } = await supabase.from('comments').select('upvotes').eq('id', commentId).single();
-            if (data) {
-                await supabase.from('comments').update({ upvotes: data.upvotes + 1 }).eq('id', commentId);
-            }
+            const result = await reportsApi.upvoteComment(id, commentId);
+            setComments(prev => prev.map(c =>
+                c.id === commentId ? { ...c, upvotes: result.upvotes ?? (c.upvotes + 1) } : c
+            ));
         } catch (error) {
             console.error("Error upvoting:", error);
+            setUpvoted(prev => ({ ...prev, [commentId]: false }));
         }
     };
 

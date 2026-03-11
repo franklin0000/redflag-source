@@ -162,6 +162,7 @@ class QueryBuilder {
       case 'blocked_users':    return this._routeBlockedUsers(op, f);
       case 'muted_chats':      return this._routeMutedChats(op, f);
       case 'dating_profiles':  return this._routeDatingProfiles(op, f);
+      case 'comments':         return this._routeComments(op, f);
       default:
         console.debug(`[supabase shim] unhandled table "${t}" op="${op}"`);
         return this._single ? null : [];
@@ -393,6 +394,39 @@ class QueryBuilder {
         return null;
       }
       default: return null;
+    }
+  }
+
+  async _routeComments(op, f) {
+    switch (op) {
+      case 'select': {
+        const reportId = f.report_id;
+        const postId = f.post_id;
+        if (reportId) return apiRequest(`/api/reports/${reportId}/comments`);
+        if (postId) return apiRequest(`/api/posts/${postId}/comments`);
+        return [];
+      }
+      case 'insert': {
+        const d = this._data;
+        if (d.report_id) {
+          return apiRequest(`/api/reports/${d.report_id}/comments`, {
+            method: 'POST',
+            body: JSON.stringify({ content: d.content }),
+          });
+        }
+        if (d.post_id) {
+          return apiRequest(`/api/posts/${d.post_id}/comments`, {
+            method: 'POST',
+            body: JSON.stringify({ content: d.content }),
+          });
+        }
+        return null;
+      }
+      case 'update': {
+        // upvote handled separately; generic update not supported
+        return null;
+      }
+      default: return this._single ? null : [];
     }
   }
 }

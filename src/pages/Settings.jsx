@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabase';
+import { userExtras } from '../services/api';
 import { secureRemove } from '../services/secureStorage';
 
 // ── Reusable Modal ──────────────────────────────────────────────────────────
@@ -249,15 +250,23 @@ export default function Settings() {
 
     // ── Blocked Users ───────────────────────────────────────────────────────
     const handleOpenBlocked = async () => {
-        const { data } = await supabase.from('users').select('settings').eq('id', user.id).single();
-        setBlockedList(data?.settings?.blockedUsers || []);
+        try {
+            const data = await userExtras.getBlocked();
+            setBlockedList(data || []);
+        } catch (err) {
+            console.warn('Failed to load blocked users:', err);
+            setBlockedList([]);
+        }
         setBlockedModal(true);
     };
 
-    const handleUnblock = async (username) => {
-        const updated = blockedList.filter(u => u !== username);
-        setBlockedList(updated);
-        await updateSetting('blockedUsers', updated);
+    const handleUnblock = async (blockedUser) => {
+        try {
+            await userExtras.unblockUser(blockedUser.id);
+            setBlockedList(prev => prev.filter(u => u.id !== blockedUser.id));
+        } catch (err) {
+            console.error('Error unblocking:', err);
+        }
     };
 
     // ── Password ────────────────────────────────────────────────────────────
@@ -710,19 +719,21 @@ export default function Settings() {
                         </div>
                     ) : (
                         <div className="space-y-2">
-                            {blockedList.map((username, idx) => (
+                            {blockedList.map((blockedUser) => (
                                 <div
-                                    key={idx}
+                                    key={blockedUser.id}
                                     className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl"
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className="w-9 h-9 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                                            <span className="material-icons text-gray-500 text-base">person</span>
+                                        <div className="w-9 h-9 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+                                            {blockedUser.avatar_url
+                                                ? <img src={blockedUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                : <span className="material-icons text-gray-500 text-base">person</span>}
                                         </div>
-                                        <span className="text-sm font-medium">@{username}</span>
+                                        <span className="text-sm font-medium">{blockedUser.name || blockedUser.username || 'Unknown'}</span>
                                     </div>
                                     <button
-                                        onClick={() => handleUnblock(username)}
+                                        onClick={() => handleUnblock(blockedUser)}
                                         className="px-3 py-1 text-xs font-semibold text-primary border border-primary/30 rounded-full hover:bg-primary/10 transition-colors"
                                     >
                                         Unblock

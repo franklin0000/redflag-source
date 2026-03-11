@@ -24,5 +24,22 @@ CREATE TABLE IF NOT EXISTS muted_chats (
   PRIMARY KEY (user_id, match_id)
 );
 
+-- Comments table (for Report comments and Post comments)
+CREATE TABLE IF NOT EXISTS comments (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  report_id   UUID REFERENCES reports(id) ON DELETE CASCADE,
+  post_id     UUID REFERENCES posts(id) ON DELETE CASCADE,
+  content     TEXT NOT NULL,
+  upvotes     INTEGER DEFAULT 0,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_comments_report ON comments(report_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id, created_at ASC);
+
+-- Add height column to dating_profiles (used by Management.jsx)
+ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS height TEXT;
+ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS profile_data JSONB DEFAULT '{}';
+
 -- Index for searches
 CREATE INDEX IF NOT EXISTS idx_searches_user ON searches(user_id, created_at DESC);

@@ -9,8 +9,9 @@ const fetch = require('node-fetch');
 
 const app = express();
 const server = http.createServer(app);
+const ALLOWED_ORIGIN = process.env.FRONTEND_URL || 'https://redflag-source.onrender.com';
 const io = new SocketIO(server, {
-  cors: { origin: '*', methods: ['GET','POST'] },
+  cors: { origin: [ALLOWED_ORIGIN, 'http://localhost:5173'], methods: ['GET','POST'] },
 });
 
 const PORT = process.env.PORT || 3001;
@@ -18,7 +19,7 @@ const db = require('./db');
 const { JWT_SECRET } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: [ALLOWED_ORIGIN, 'http://localhost:5173'], credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 // ── Serve React frontend (dist/) ──────────────────────────────

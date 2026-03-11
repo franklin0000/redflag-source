@@ -5,8 +5,17 @@ const db = require('../db');
 const { signToken, signRefreshToken, JWT_SECRET } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
 
+let rateLimit;
+try { rateLimit = require('express-rate-limit'); } catch { rateLimit = null; }
+const makeLimit = (max, windowMin = 15) => rateLimit
+  ? rateLimit({ windowMs: windowMin * 60 * 1000, max, standardHeaders: true, legacyHeaders: false })
+  : (req, res, next) => next();
+const loginLimiter = makeLimit(10, 15);     // 10 attempts per 15 min
+const registerLimiter = makeLimit(5, 60);   // 5 registrations per hour
+const resetLimiter = makeLimit(3, 60);      // 3 reset requests per hour
+
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   const { email, password, name } = req.body;
   if (!email || !password || !name)
     return res.status(400).json({ error: 'email, password, name required' });
@@ -37,7 +46,7 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
     return res.status(400).json({ error: 'email and password required' });
@@ -104,7 +113,7 @@ router.get('/me', require('../middleware/auth').requireAuth, async (req, res) =>
 });
 
 // POST /api/auth/forgot-password
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', resetLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email required' });
   try {
@@ -117,13 +126,8 @@ router.post('/forgot-password', async (req, res) => {
       'UPDATE users SET reset_token = $1, reset_token_exp = $2 WHERE id = $3',
       [token, exp, rows[0].id]
     );
-    // In production: send email with token link
-    // For now return the token (dev mode) — remove in production
-    const isDev = process.env.NODE_ENV !== 'production';
-    res.json({
-      message: 'If that email exists, a reset link was sent.',
-      ...(isDev ? { reset_token: token } : {}),
-    });
+    // TODO: send email with reset link in production
+    res.json({ message: 'If that email exists, a reset link was sent.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
