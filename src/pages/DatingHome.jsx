@@ -239,7 +239,7 @@ export default function DatingHome() {
                             initial={{ y: -50, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.2 }}
-                            className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 mb-8 italic transform -rotate-6 relative z-[102]"
+                            className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-8 italic transform -rotate-6 relative z-[102]"
                         >
                             IT'S A MATCH!
                         </motion.h1>
@@ -256,7 +256,7 @@ export default function DatingHome() {
                                 initial={{ x: 100, opacity: 0 }}
                                 animate={{ x: 0, opacity: 1 }}
                                 transition={{ delay: 0.3 }}
-                                className="absolute right-4 w-32 h-32 rounded-full border-4 border-pink-500 overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.5)] transform rotate-12 bg-gray-800 flex items-center justify-center"
+                                className="absolute right-4 w-32 h-32 rounded-full border-4 border-pink-500 overflow-hidden shadow-[0_0_20px_rgba(99,102,241,0.5)] transform rotate-12 bg-gray-800 flex items-center justify-center"
                             >
                                 <span className="material-icons text-4xl text-gray-500">person</span>
                             </motion.div>
