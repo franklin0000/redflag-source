@@ -170,6 +170,7 @@ io.use(async (socket, next) => {
 
 locationFlagsRouter.setIo(io);
 guardianRouter.setIo(io);
+require('./ioRef').setIO(io);
 
 io.on('connection', (socket) => {
   const userId = socket.user.id;
@@ -286,6 +287,11 @@ io.on('connection', (socket) => {
   // Live Radar — location sharing
   socket.on('location:update', ({ matchId, lat, lng }) => {
     socket.to(`match:${matchId}`).emit('location:update', { userId, lat, lng });
+  });
+
+  // Community Rooms — real-time post broadcast
+  socket.on('join_community_room', (roomId) => {
+    if (roomId) socket.join(`community:${roomId}`);
   });
 
   socket.on('disconnect', () => {

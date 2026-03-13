@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { supabase } from '../services/supabase';
 import { uploadCommunityMedia } from '../services/storageService';
+import { getSocket } from '../services/chatService';
 
 const ROOM_CONFIG = {
     women: {
@@ -131,44 +132,22 @@ export default function CommunityRoom() {
 
         fetchPosts();
 
-        const fetchNewPost = async (id) => {
-            const { data } = await supabase
-                .from('posts')
-                .select(`
-                    *,
-                    user:users!user_id (name, photo_url)
-                `)
-                .eq('id', id)
-                .single();
+        // Socket.io real-time subscription
+        // Socket.io real-time subscription (replaces dead Supabase channel stub)
+        const s = getSocket();
+        s.emit('join_community_room', roomId);
 
-            if (data) {
-                const newPost = mapPosts([data])[0];
-                setPosts(prev => {
-                    if (prev.some(p => p.id === newPost.id)) return prev;
-                    return [newPost, ...prev].sort((a, b) => b.timestamp - a.timestamp);
-                });
-            }
+        const handleNewPost = (post) => {
+            setPosts(prev => {
+                if (prev.some(p => p.id === post.id)) return prev;
+                const mapped = mapPosts([post])[0];
+                return [mapped, ...prev];
+            });
         };
-
-        // Realtime Subscription
-        const channel = supabase
-            .channel(`room:${roomId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'posts',
-                    filter: `room_id=eq.${roomId}`
-                },
-                (payload) => {
-                    fetchNewPost(payload.new.id);
-                }
-            )
-            .subscribe();
+        s.on('new_community_post', handleNewPost);
 
         return () => {
-            supabase.removeChannel(channel);
+            s.off('new_community_post', handleNewPost);
         };
     }, [roomId, room]);
 

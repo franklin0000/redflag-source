@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
+const { getIO } = require('../ioRef');
 
 // GET /api/posts — community feed (optional user_id and room_id filter)
 router.get('/', optionalAuth, async (req, res) => {
@@ -27,15 +28,20 @@ router.get('/', optionalAuth, async (req, res) => {
 
 // POST /api/posts — create post
 router.post('/', requireAuth, async (req, res) => {
-  const { content, media_url, room_id = 'general' } = req.body;
+  const { content, media_url, media_type, media_name, room_id = 'general' } = req.body;
   if (!content) return res.status(400).json({ error: 'content required' });
   try {
     const { rows } = await db.query(
-      `INSERT INTO posts (user_id, content, media_url, room_id)
-       VALUES ($1,$2,$3,$4) RETURNING *`,
-      [req.user.id, content, media_url || null, room_id]
+      `INSERT INTO posts (user_id, content, media_url, media_type, media_name, room_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *, $7::text as name, $8::text as avatar_url`,
+      [req.user.id, content, media_url || null, media_type || null, media_name || null, room_id,
+       req.user.name, req.user.avatar_url || null]
     );
-    res.status(201).json(rows[0]);
+    const post = rows[0];
+    res.status(201).json(post);
+    // Broadcast to community room in real-time
+    getIO()?.to(`community:${room_id}`).emit('new_community_post', post);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
