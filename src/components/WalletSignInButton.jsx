@@ -52,62 +52,59 @@ export default function WalletSignInButton({ onSuccess, onError, label = 'Sign i
         setPending(true);
         setStep(2);
         try {
-            let data, error;
+            // 1. Generate standard signature message
+            const message = `Sign in to RedFlag Dating App.
+Wallet Address: ${addr}
+            
+Do not share this signature, it acts as your secure password.`;
 
-            const eth = window.ethereum;
-            const isInjected = eth && (
-                connectorId === 'injected' ||
-                connectorId === 'metaMask' ||
-                connectorId === 'coinbaseWallet' ||
-                connectorId === 'io.metamask' ||
-                !connectorId
+            // 2. Request signature from the wallet
+            const signature = await withTimeout(
+                wagmiSign({ message }),
+                SIGN_TIMEOUT_MS,
+                'Wallet timed out.'
             );
 
-            if (isInjected) {
-                // Use Supabase's built-in auto-sign flow for injected wallets.
-                // This guarantees the SIWE message format exactly matches what
-                // the GoTrue server expects — no manual message building needed.
-                ({ data, error } = await withTimeout(
-                    supabase.auth.signInWithWeb3({
-                        chain: 'ethereum',
-                        wallet: eth,
-                        statement: 'Sign in to RedFlag Dating App',
-                    }),
-                    SIGN_TIMEOUT_MS,
-                    'Wallet timed out.'
-                ));
-            } else {
-                // WalletConnect or other non-injected connector — manual flow
-                const nonce = generateSiweNonce();
-                const message = createSiweMessage({
-                    address: addr,
-                    chainId: chain ?? 1,
-                    domain: window.location.host,
-                    nonce,
-                    uri: window.location.href,
-                    version: '1',
-                    statement: 'Sign in to RedFlag Dating App',
+            setStep(3);
+
+            // 3. Authenticate with Supabase using signature as password
+            const web3Email = `${addr.toLowerCase()}@web3.redflag.app`;
+
+            let { data, error } = await supabase.auth.signInWithPassword({
+                email: web3Email,
+                password: signature
+            });
+
+            // If account doesn't exist, sign them up passively
+            if (error && (error.message.includes('Invalid login') || error.message.includes('not found'))) {
+                const signUpRes = await supabase.auth.signUp({
+                    email: web3Email,
+                    password: signature,
+                    options: {
+                        data: {
+                            wallet_address: addr,
+                            is_verified_web3: true,
+                        }
+                    }
                 });
+                data = signUpRes.data;
+                error = signUpRes.error;
 
-                const signature = await withTimeout(
-                    wagmiSign({ message }),
-                    SIGN_TIMEOUT_MS,
-                    'Wallet timed out.'
-                );
-
-                setStep(3);
-
-                ({ data, error } = await withTimeout(
-                    supabase.auth.signInWithWeb3({ chain: 'ethereum', message, signature }),
-                    15_000,
-                    'Authentication timed out. Please try again.'
-                ));
+                if (!error && data?.user) {
+                    await supabase.from('users').upsert({
+                        id: data.user.id,
+                        email: web3Email,
+                        wallet_address: addr,
+                        is_verified_web3: true
+                    });
+                }
             }
 
             if (error) {
                 console.error('[WalletSignIn] Supabase error:', error);
                 throw error;
             }
+
             onSuccessRef.current?.(data);
         } catch (err) {
             console.error('[WalletSignIn] Error:', err);
@@ -159,12 +156,12 @@ export default function WalletSignInButton({ onSuccess, onError, label = 'Sign i
                 ) : (
                     <>
                         <svg viewBox="0 0 784.37 1277.39" className="h-5 w-5 flex-shrink-0" fill="currentColor">
-                            <polygon fillOpacity="0.9" points="392.07,0 383.5,29.11 383.5,873.74 392.07,882.29 784.13,650.54"/>
-                            <polygon fillOpacity="0.7" points="392.07,0 0,650.54 392.07,882.29 392.07,472.33"/>
-                            <polygon fillOpacity="0.6" points="392.07,956.52 387.24,962.41 387.24,1263.28 392.07,1277.38 784.37,724.89"/>
-                            <polygon fillOpacity="0.45" points="392.07,1277.38 392.07,956.52 0,724.89"/>
-                            <polygon fillOpacity="0.8" points="392.07,882.29 784.13,650.54 392.07,472.33"/>
-                            <polygon fillOpacity="0.5" points="0,650.54 392.07,882.29 392.07,472.33"/>
+                            <polygon fillOpacity="0.9" points="392.07,0 383.5,29.11 383.5,873.74 392.07,882.29 784.13,650.54" />
+                            <polygon fillOpacity="0.7" points="392.07,0 0,650.54 392.07,882.29 392.07,472.33" />
+                            <polygon fillOpacity="0.6" points="392.07,956.52 387.24,962.41 387.24,1263.28 392.07,1277.38 784.37,724.89" />
+                            <polygon fillOpacity="0.45" points="392.07,1277.38 392.07,956.52 0,724.89" />
+                            <polygon fillOpacity="0.8" points="392.07,882.29 784.13,650.54 392.07,472.33" />
+                            <polygon fillOpacity="0.5" points="0,650.54 392.07,882.29 392.07,472.33" />
                         </svg>
                         {label}
                     </>

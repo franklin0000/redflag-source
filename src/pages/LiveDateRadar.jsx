@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDating } from '../context/DatingContext';
 import { useToast } from '../context/ToastContext';
 import { watchLocation, isGeolocationSupported } from '../services/locationService';
-import { getSocket } from '../services/chatService';
+import { supabase } from '../services/supabase';
 import Map, { Marker } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -55,7 +55,7 @@ export default function LiveDateRadar() {
         }
     }, [myLoc, matchLoc]);
 
-    // GPS watch + Socket.io location sharing
+    // GPS watch + Supabase Broadcast location sharing
     useEffect(() => {
         if (!isGeolocationSupported()) {
             setLocationError('GPS not supported in this browser');
@@ -64,30 +64,33 @@ export default function LiveDateRadar() {
 
         toast.info('Radar scanning for your location...');
 
-        const socket = getSocket();
+        // Subscribe to partner location updates via Supabase Broadcast
+        const channel = supabase.channel(`radar:${matchId}`)
+            .on('broadcast', { event: 'location:update' }, ({ payload }) => {
+                if (payload.userId !== user?.id) {
+                    setMatchLoc({ lat: payload.lat, lng: payload.lng });
+                }
+            })
+            .subscribe();
 
-        // Join the match room
-        socket.emit('join_match', matchId);
-
-        // Listen for partner location updates
-        socket.on('location:update', ({ lat, lng }) => {
-            setMatchLoc({ lat, lng });
-        });
-
-        // Watch my GPS and broadcast via socket
+        // Watch my GPS and broadcast via Supabase
         stopWatchRef.current = watchLocation(
-            (coords) => {
+            async (coords) => {
                 setLocationError(null);
                 setMyLoc(coords);
                 setViewState(prev => ({ ...prev, latitude: coords.lat, longitude: coords.lng }));
-                socket.emit('location:update', { matchId, lat: coords.lat, lng: coords.lng });
+                await channel.send({
+                    type: 'broadcast',
+                    event: 'location:update',
+                    payload: { userId: user?.id, matchId, lat: coords.lat, lng: coords.lng },
+                });
             },
             () => setLocationError('GPS signal lost')
         );
 
         return () => {
             if (stopWatchRef.current) stopWatchRef.current();
-            socket.off('location:update');
+            supabase.removeChannel(channel);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [matchId, user?.id]);

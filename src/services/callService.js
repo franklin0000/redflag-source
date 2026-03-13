@@ -1,13 +1,23 @@
-/**
- * callService.js — WebRTC signaling via Socket.io
- * Replaced Supabase Realtime with our existing Socket.io connection.
- */
-
 import SimplePeer from 'simple-peer';
-import { getSocket } from './chatService';
+import { supabase } from '../lib/supabase';
 
 let activePeer = null;
 let localStream = null;
+let activeChannel = null;
+
+function getCallChannel(matchId) {
+  if (activeChannel && activeChannel.topic === `realtime:call:${matchId}`) {
+    return activeChannel;
+  }
+
+  if (activeChannel) {
+    supabase.removeChannel(activeChannel);
+  }
+
+  activeChannel = supabase.channel(`call:${matchId}`);
+  activeChannel.subscribe();
+  return activeChannel;
+}
 
 export const callService = {
   initiateCall: async (matchId, userId, type, onStream, onClose) => {
@@ -22,10 +32,12 @@ export const callService = {
       activePeer = peer;
 
       peer.on('signal', data => {
-        const socket = getSocket();
-        if (socket?.connected) {
-          socket.emit('call:signal', { matchId, signal: data, from: userId, type: 'offer', callType: type });
-        }
+        const channel = getCallChannel(matchId);
+        channel.send({
+          type: 'broadcast',
+          event: 'call:signal',
+          payload: { matchId, signal: data, from: userId, type: 'offer', callType: type }
+        });
       });
 
       peer.on('stream', remoteStream => { if (onStream) onStream(remoteStream); });
@@ -51,10 +63,12 @@ export const callService = {
       activePeer = peer;
 
       peer.on('signal', data => {
-        const socket = getSocket();
-        if (socket?.connected) {
-          socket.emit('call:signal', { matchId, signal: data, from: userId, type: 'answer' });
-        }
+        const channel = getCallChannel(matchId);
+        channel.send({
+          type: 'broadcast',
+          event: 'call:signal',
+          payload: { matchId, signal: data, from: userId, type: 'answer' }
+        });
       });
 
       peer.on('stream', remoteStream => { if (onStream) onStream(remoteStream); });
@@ -75,19 +89,25 @@ export const callService = {
   },
 
   endCall: (matchId) => {
-    if (activePeer) activePeer.destroy();
+    if (activePeer) {
+      activePeer.destroy();
+    }
     cleanupCall();
     if (matchId) {
-      const socket = getSocket();
-      if (socket?.connected) socket.emit('call:end', { matchId });
+      const channel = getCallChannel(matchId);
+      channel.send({
+        type: 'broadcast',
+        event: 'call:end',
+        payload: { matchId }
+      });
     }
   },
 
   subscribeToSignals: (matchId, userId, onIncomingCall, onAnswer, onEnd) => {
-    const socket = getSocket();
-    if (!socket) return () => {};
+    const channel = getCallChannel(matchId);
 
-    const handleSignal = ({ signal, from, type, callType }) => {
+    const handleSignal = (payload) => {
+      const { signal, from, type, callType } = payload.payload;
       if (from === userId) return;
       if (type === 'offer') onIncomingCall({ signal, from, callType });
       else if (type === 'answer' && onAnswer) onAnswer(signal);
@@ -98,12 +118,18 @@ export const callService = {
       cleanupCall();
     };
 
-    socket.on('call:signal', handleSignal);
-    socket.on('call:end', handleEnd);
+    channel.on('broadcast', { event: 'call:signal' }, handleSignal);
+    channel.on('broadcast', { event: 'call:end' }, handleEnd);
 
     return () => {
-      socket.off('call:signal', handleSignal);
-      socket.off('call:end', handleEnd);
+      // Don't fully remove channel here unless we destroy it completely, 
+      // but we need to unsubscribe the specific listeners to prevent memory leaks.
+      // Supabase js v2 allows removing specific bindings if we kept the object, 
+      // but easier is just closing and nulling the channel if we leave the chat
+      if (activeChannel) {
+        supabase.removeChannel(activeChannel);
+        activeChannel = null;
+      }
     };
   },
 };

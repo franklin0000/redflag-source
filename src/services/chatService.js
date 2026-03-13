@@ -1,113 +1,151 @@
-// chatService.js — Socket.io real-time chat (replaces Supabase Realtime)
-import { io } from 'socket.io-client';
-import { datingApi, authApi } from './api';
+import { supabase } from '../lib/supabase';
 
-const BASE = import.meta.env.VITE_API_URL || '';
-
-let socket = null;
-
-export function getSocket() {
-    if (!socket || socket.disconnected) {
-        socket = io(BASE || window.location.origin, {
-            auth: { token: authApi.getToken() },
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-        });
-        socket.on('connect_error', (err) => {
-            console.warn('Socket connect error:', err.message);
-        });
-    }
-    return socket;
+// Helper to get current user ID
+async function getCurrentUserId() {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.id || null;
 }
 
+// ── Dating Chat ──────────────────────────────────────────────────
 export function subscribeToMessages(matchId, callback) {
-    const s = getSocket();
-    s.emit('join_match', matchId);
-
-    const handler = (message) => {
-        callback(prev => {
-            const list = Array.isArray(prev) ? prev : [];
-            if (list.find(m => m.id === message.id)) return list;
-            return [...list, message];
+    // 1. Load History
+    supabase.from('messages')
+        .select('*')
+        .eq('room_id', matchId)
+        .order('created_at', { ascending: true })
+        .then(({ data, error }) => {
+            if (!error && data) callback(data);
         });
+
+    // 2. Subscribe to new messages
+    const channel = supabase.channel(`match:${matchId}`)
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${matchId}` },
+            (payload) => {
+                callback(prev => {
+                    const list = Array.isArray(prev) ? prev : [];
+                    if (list.find(m => m.id === payload.new.id)) return list;
+                    return [...list, payload.new];
+                });
+            }
+        )
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
     };
-
-    s.on('new_message', handler);
-
-    // Load existing messages via REST on subscribe
-    datingApi.getMessages(matchId)
-        .then(msgs => { if (Array.isArray(msgs)) callback(msgs); })
-        .catch(console.error);
-
-    return () => { s.off('new_message', handler); };
 }
 
 export async function sendMessage(matchId, content, iv = null) {
-    const s = getSocket();
-    if (s.connected) {
-        s.emit('send_message', { matchId, content, iv });
-        return { id: crypto.randomUUID(), matchId, content, iv, created_at: new Date().toISOString() };
+    const userId = await getCurrentUserId();
+    if (!userId) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.from('messages').insert({
+        room_id: matchId,
+        sender_id: userId,
+        content,
+        iv,
+    }).select().single();
+
+    if (error) {
+        console.error('Error sending message:', error);
+        throw error;
     }
-    // REST fallback when socket disconnected
-    return datingApi.sendMessage(matchId, content, iv);
+    return data;
 }
 
+// Typing indicators via Broadcast
 export function subscribeToTyping(matchId, callback) {
-    const s = getSocket();
-    const handler = (data) => callback(data);
-    s.on('user_typing', handler);
-    return () => s.off('user_typing', handler);
-}
+    const channel = supabase.channel(`typing:${matchId}`);
 
-export function sendTyping(matchId, isTyping) {
-    const s = getSocket();
-    if (s.connected) s.emit('typing', { matchId, isTyping });
-}
-
-export function disconnectSocket() {
-    if (socket) { socket.disconnect(); socket = null; }
-}
-
-// Anonymous chat functions
-export function subscribeToAnonMessages(room, callback) {
-    const s = getSocket();
-    s.emit('join_anon', room);
-
-    const historyHandler = (history) => {
-        callback(history);
-    };
-
-    const newMessageHandler = (message) => {
-        callback(prev => {
-            const list = Array.isArray(prev) ? prev : [];
-            if (list.find(m => m.id === message.id)) return list;
-            return [...list, message];
-        });
-    };
-
-    s.on('anon_history', historyHandler);
-    s.on('new_anon_message', newMessageHandler);
+    channel.on('broadcast', { event: 'typing' }, (payload) => {
+        callback(payload.payload);
+    }).subscribe();
 
     return () => {
-        s.off('anon_history', historyHandler);
-        s.off('new_anon_message', newMessageHandler);
+        supabase.removeChannel(channel);
+    };
+}
+
+export async function sendTyping(matchId, isTyping) {
+    const userId = await getCurrentUserId();
+    if (!userId) return;
+
+    const channel = supabase.channel(`typing:${matchId}`);
+    await channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { matchId, isTyping, user_id: userId }
+    });
+}
+
+// ── Anonymous Chat ────────────────────────────────────────────────
+export function subscribeToAnonMessages(room, callback) {
+    // 1. Load History
+    supabase.from('messages')
+        .select('*')
+        .eq('room_id', room)
+        .order('created_at', { ascending: true })
+        .then(({ data, error }) => {
+            if (!error && data) callback(data);
+        });
+
+    // 2. Subscribe to live messages
+    const channel = supabase.channel(`anon:${room}`)
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room}` },
+            (payload) => {
+                callback(prev => {
+                    const list = Array.isArray(prev) ? prev : [];
+                    if (list.find(m => m.id === payload.new.id)) return list;
+                    return [...list, payload.new];
+                });
+            }
+        )
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
     };
 }
 
 export async function sendAnonMessage(room, text, nickname, avatar, attachment = null, type = 'text') {
-    const s = getSocket();
-    if (s.connected) {
-        s.emit('send_anon_message', { room, text, nickname, avatar, attachment, type });
-        return true;
+    const userId = await getCurrentUserId();
+    if (!userId) return false;
+
+    // Ephemeral messages expire in 24 hours
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    const { error } = await supabase.from('messages').insert({
+        room_id: room,
+        sender_id: userId,
+        content: text,
+        nickname,
+        avatar,
+        attachment,
+        type,
+        expires_at: expiresAt.toISOString(),
+    });
+
+    if (error) {
+        console.error('Error sending anon message:', error);
+        return false;
     }
-    return false;
+    return true;
 }
 
-// Legacy compat exports for non-dating chat (ChatRoom.jsx)
 export async function uploadChatAttachment(file, matchId) {
-    const { uploadFile } = await import('./api');
-    return uploadFile(file, `redflag/chat/${matchId}`);
+    const ext = file.name.split('.').pop();
+    const path = `chat/${matchId}/${crypto.randomUUID()}.${ext}`;
+
+    const { data, error } = await supabase.storage.from('redflag').upload(path, file);
+    if (error) throw error;
+
+    const { data: publicData } = supabase.storage.from('redflag').getPublicUrl(path);
+    return publicData.publicUrl;
 }
 
 export function generateNickname() {

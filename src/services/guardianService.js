@@ -1,10 +1,6 @@
-/**
- * 🛡️ Guardian Service
- *
- * Two responsibilities:
- *  1. Risk analysis — heuristic scan of chat messages for red flags
- *  2. Guardian sessions — real backend API + Socket.io real-time safety sessions
- */
+
+
+import { supabase } from '../lib/supabase';
 
 // ── Risk patterns ─────────────────────────────────────────────────────────────
 const RISK_PATTERNS = {
@@ -44,117 +40,141 @@ export async function logRiskAnalysis(userId, matchId, analysis) {
     }
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
-const BASE = import.meta.env.VITE_API_URL || '';
-
-function getToken() {
-    return localStorage.getItem('rf_token');
-}
-
-async function apiRequest(path, options = {}) {
-    const token = getToken();
-    const res = await fetch(`${BASE}${path}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers || {}),
-        },
-    });
-    if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-    return res.json();
-}
-
-// ── Session management (backed by PostgreSQL + Socket.io) ─────────────────────
+// ── Session management (Supabase PostgreSQL + Realtime) ─────────────────────
 
 export async function createGuardianSession(userId, daterName, checkInMinutes = 30, dateLocation = '') {
-    return apiRequest('/api/guardian/sessions', {
-        method: 'POST',
-        body: JSON.stringify({ dater_name: daterName, date_location: dateLocation, check_in_minutes: checkInMinutes }),
-    });
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 12); // Hard 12-hour limit on sessions
+
+    // Generate a unique token for the share link
+    const sessionToken = crypto.randomUUID();
+
+    // Find and end existing active session for this user
+    await supabase.from('guardian_sessions').update({ is_active: false }).eq('dater_id', userId).eq('is_active', true);
+
+    const { data, error } = await supabase.from('guardian_sessions').insert({
+        dater_id: userId,
+        session_token: sessionToken,
+        dater_name: daterName,
+        check_in_minutes: checkInMinutes,
+        date_location: dateLocation,
+        is_active: true,
+        is_sos: false,
+        sentiment: 'normal',
+        expires_at: expiresAt.toISOString(),
+    }).select().single();
+
+    if (error) throw error;
+    // Map db data to what the frontend expects
+    return { session: data };
 }
 
 export async function updateGuardianLocation(sessionId, lat, lng) {
     try {
-        await apiRequest(`/api/guardian/sessions/${sessionId}/location`, {
-            method: 'PATCH',
-            body: JSON.stringify({ lat, lng }),
-        });
+        await supabase.from('guardian_sessions').update({
+            location: { lat, lng, updatedAt: new Date().toISOString() }
+        }).eq('id', sessionId);
     } catch (err) {
         console.warn('[Guardian] Failed to update location:', err.message);
     }
 }
 
 export async function checkInSafe(sessionId) {
-    return apiRequest(`/api/guardian/sessions/${sessionId}/checkin`, { method: 'POST' });
+    const { data, error } = await supabase.from('guardian_sessions').update({
+        last_checkin_at: new Date().toISOString()
+    }).eq('id', sessionId).select().single();
+
+    if (error) throw error;
+    return { session: data };
 }
 
 export async function markTense(sessionId) {
-    // No dedicated endpoint — captured via SOS flow or future sentiment API
+    await supabase.from('guardian_sessions').update({
+        sentiment: 'tense'
+    }).eq('id', sessionId);
     console.info('[Guardian] markTense', sessionId);
 }
 
 export async function triggerSOS(sessionId, location = null) {
-    return apiRequest(`/api/guardian/sessions/${sessionId}/sos`, {
-        method: 'POST',
-        body: JSON.stringify({ location }),
-    });
+    const updates = { is_sos: true, sentiment: 'panic' };
+    if (location) {
+        updates.location = { ...location, updatedAt: new Date().toISOString() };
+    }
+    const { data, error } = await supabase.from('guardian_sessions').update(updates).eq('id', sessionId).select().single();
+    if (error) throw error;
+    return { session: data };
 }
 
 export async function cancelSOS(sessionId) {
-    return apiRequest(`/api/guardian/sessions/${sessionId}/sos/cancel`, { method: 'POST' });
+    const { data, error } = await supabase.from('guardian_sessions').update({
+        is_sos: false,
+        sentiment: 'normal',
+        last_checkin_at: new Date().toISOString()
+    }).eq('id', sessionId).select().single();
+    if (error) throw error;
+    return { session: data };
 }
 
 export async function endGuardianSession(sessionId) {
-    return apiRequest(`/api/guardian/sessions/${sessionId}/end`, { method: 'POST' });
+    const { data, error } = await supabase.from('guardian_sessions').update({
+        is_active: false,
+        expires_at: new Date().toISOString()
+    }).eq('id', sessionId).select().single();
+    if (error) throw error;
+    return { session: data };
 }
 
 export async function getSessionByToken(token) {
-    return apiRequest(`/api/guardian/view/${token}`);
+    // API endpoint previously took the session link token or ID. 
+    // We'll search by session_token first, then fallback to id.
+    let { data, error } = await supabase.from('guardian_sessions').select('*').eq('session_token', token).single();
+    if (error || !data) {
+        const fallback = await supabase.from('guardian_sessions').select('*').eq('id', token).single();
+        data = fallback.data;
+        error = fallback.error;
+    }
+    if (error || !data) throw new Error('Session not found');
+    return { session: data };
 }
 
 export async function getMyActiveSession() {
-    return apiRequest('/api/guardian/sessions/mine');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return { session: null };
+
+    const { data, error } = await supabase.from('guardian_sessions')
+        .select('*')
+        .eq('dater_id', session.user.id)
+        .eq('is_active', true)
+        .single();
+
+    if (error) return { session: null };
+    return { session: data };
 }
 
 /**
- * Subscribe to real-time guardian session updates via Socket.io.
- * Falls back to 10-second polling if Socket.io is unavailable.
+ * Subscribe to real-time guardian session updates via Supabase Channels.
  */
 export function subscribeToSession(sessionToken, onUpdate) {
-    // Try Socket.io first
-    try {
-        const { io } = require('socket.io-client');
-        const socket = io(BASE || window.location.origin, {
-            auth: { token: getToken() },
-            transports: ['websocket'],
-        });
-        socket.emit('join_guardian', sessionToken);
-        socket.on('guardian:update', onUpdate);
-        socket.on('guardian:location', (loc) => onUpdate({ location: loc }));
-        socket.on('guardian:sos', ({ session }) => onUpdate(session));
-        socket.on('guardian:ended', () => onUpdate({ is_active: false }));
-        return {
-            unsubscribe: () => {
-                socket.off('guardian:update');
-                socket.off('guardian:location');
-                socket.off('guardian:sos');
-                socket.off('guardian:ended');
-                socket.disconnect();
-            },
-        };
-    } catch {
-        // Fallback: poll the API every 10 seconds
-        const interval = setInterval(async () => {
-            try {
-                const session = await getSessionByToken(sessionToken);
-                onUpdate(session);
-            } catch {
-                // Session ended or expired
+    // Let's deduce if token is session_token or ID
+    // Fast path: subscribe changes where id=sessionToken or just refresh via DB
+    const channel = supabase.channel(`guardian:${sessionToken}`)
+        .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'guardian_sessions' },
+            (payload) => {
+                // we have to check if payload matches id or session_token
+                if (payload.new.id === sessionToken || payload.new.session_token === sessionToken) {
+                    onUpdate({ session: payload.new });
+                }
             }
-        }, 10000);
-        return { unsubscribe: () => clearInterval(interval) };
-    }
+        )
+        .subscribe();
+
+    return {
+        unsubscribe: () => {
+            supabase.removeChannel(channel);
+        }
+    };
 }
 
 export default { analyzeMessageRisk, logRiskAnalysis };
