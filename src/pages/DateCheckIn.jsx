@@ -7,11 +7,13 @@ import {
     getEmergencyNumber,
     isGeolocationSupported,
 } from '../services/locationService';
-import { contactsApi } from '../services/api';
+import { supabase } from '../services/supabase';
+import { useAuth } from '../context/AuthContext';
 
 export default function DateCheckIn() {
     const navigate = useNavigate();
     const toast = useToast();
+    const { user } = useAuth();
 
     // Guard state
     const [isActive, setIsActive] = useState(false);
@@ -31,18 +33,18 @@ export default function DateCheckIn() {
     });
     const [contactsLoaded, setContactsLoaded] = useState(false);
 
-    // Load contacts from backend on mount
+    // Load contacts from Supabase on mount
     useEffect(() => {
-        contactsApi.getAll()
-            .then(data => {
+        supabase.from('trusted_contacts').select('*').eq('user_id', user?.id || '')
+            .then(({ data }) => {
                 if (data && data.length > 0) {
                     setContacts(data);
                     localStorage.setItem('rf_saved_contacts', JSON.stringify(data));
                 }
                 setContactsLoaded(true);
             })
-            .catch(() => { setContactsLoaded(true); }); // fail silently, show empty list
-    }, []);
+            .catch(() => { setContactsLoaded(true); });
+    }, [user?.id]);
 
     // Location state
     const [location, setLocation] = useState(null);

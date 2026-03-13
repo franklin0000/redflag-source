@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabase';
-import { userExtras } from '../services/api';
 import { secureRemove } from '../services/secureStorage';
 
 // ── Reusable Modal ──────────────────────────────────────────────────────────
@@ -251,8 +250,11 @@ export default function Settings() {
     // ── Blocked Users ───────────────────────────────────────────────────────
     const handleOpenBlocked = async () => {
         try {
-            const data = await userExtras.getBlocked();
-            setBlockedList(data || []);
+            const { data } = await supabase
+                .from('blocked_users')
+                .select(`*, blocked:users!blocked_id(id, name, photo_url, username)`)
+                .eq('blocker_id', user?.id);
+            setBlockedList((data || []).map(r => r.blocked).filter(Boolean));
         } catch (err) {
             console.warn('Failed to load blocked users:', err);
             setBlockedList([]);
@@ -262,7 +264,10 @@ export default function Settings() {
 
     const handleUnblock = async (blockedUser) => {
         try {
-            await userExtras.unblockUser(blockedUser.id);
+            await supabase.from('blocked_users')
+                .delete()
+                .eq('blocker_id', user?.id)
+                .eq('blocked_id', blockedUser.id);
             setBlockedList(prev => prev.filter(u => u.id !== blockedUser.id));
         } catch (err) {
             console.error('Error unblocking:', err);
@@ -357,11 +362,11 @@ export default function Settings() {
     const SettingRow = ({ icon, iconBg, title, subtitle, children, onClick }) => {
         const iconColor = iconBg.includes('red') ? 'text-red-500'
             : iconBg.includes('blue') ? 'text-blue-500'
-            : iconBg.includes('green') ? 'text-green-500'
-            : iconBg.includes('orange') ? 'text-orange-500'
-            : iconBg.includes('purple') ? 'text-purple-500'
-            : iconBg.includes('primary') ? 'text-primary'
-            : 'text-gray-500';
+                : iconBg.includes('green') ? 'text-green-500'
+                    : iconBg.includes('orange') ? 'text-orange-500'
+                        : iconBg.includes('purple') ? 'text-purple-500'
+                            : iconBg.includes('primary') ? 'text-primary'
+                                : 'text-gray-500';
         return (
             <div
                 onClick={onClick}

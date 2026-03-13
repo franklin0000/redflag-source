@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { datingApi } from '../services/api';
+import { supabase } from '../services/supabase';
 
 export default function DateCalendar() {
     const navigate = useNavigate();
@@ -14,16 +14,20 @@ export default function DateCalendar() {
         if (!user) return;
         const fetchDates = async () => {
             try {
-                // Fetch matches and parse date_invite messages from last_message field
-                const matches = await datingApi.getMatches().catch(() => []);
+                // Fetch matches from Supabase
+                const { data: matches } = await supabase
+                    .from('matches')
+                    .select('id, last_message, last_message_time, updated_at')
+                    .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
                 const parsedEvents = [];
-                for (const m of matches) {
+                for (const m of (matches || [])) {
                     if (m.last_message?.includes('[date_invite]')) {
                         const content = m.last_message;
                         const match = content.match(/Let's meet at (.+)!📍 (.+)/);
                         const placeName = match ? match[1] : 'Unknown Place';
                         const address = match ? match[2] : '';
-                        const eventDate = new Date(m.last_message_at || m.updated_at || Date.now());
+                        const eventDate = new Date(m.last_message_time || m.updated_at || Date.now());
                         eventDate.setDate(eventDate.getDate() + 1);
                         eventDate.setHours(19, 0, 0, 0);
                         parsedEvents.push({

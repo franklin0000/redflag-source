@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { usersApi } from '../services/api';
+import { supabase } from '../services/supabase';
 import { useToast } from '../context/ToastContext';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -124,7 +124,11 @@ export default function Verification() {
 
     const completeVerification = async (verifiedGender) => {
         try {
-            await usersApi.verifyIdentity(verifiedGender);
+            const { error: verErr } = await supabase
+                .from('users')
+                .update({ is_verified: true, gender: verifiedGender || user?.gender })
+                .eq('id', user?.id);
+            if (verErr) throw verErr;
 
             // Re-sync local auth state from DB
             if (refreshUser) await refreshUser();

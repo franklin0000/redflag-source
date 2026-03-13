@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { reportsApi } from '../services/api';
+import { supabase } from '../services/supabase';
 import { secureGet } from '../services/secureStorage';
 
 const getTimeAgo = (timestamp) => {
@@ -54,20 +54,26 @@ export default function ReportDetail() {
                     }
                 }
 
-                // 2. Fetch from Express API
-                const data = await reportsApi.getReport(id);
+                // 2. Fetch from Supabase
+                const { data, error } = await supabase
+                    .from('reports')
+                    .select(`*, user:users!user_id(name, is_verified, photo_url)`)
+                    .eq('id', id)
+                    .single();
+
+                if (error) throw error;
 
                 if (data) {
                     setReport({
                         ...data,
-                        initials: (data.reported_name || 'AN').substring(0, 2).toUpperCase(),
-                        flags: [data.category].filter(Boolean),
+                        initials: (data.user?.name || 'AN').substring(0, 2).toUpperCase(),
+                        flags: [data.type].filter(Boolean),
                         riskLevel: 'medium',
-                        reportCount: data.upvotes || 1,
-                        user: data.reporter_name || 'Anonymous',
-                        verified: data.reporter_verified,
-                        location: '',
-                        image: data.evidence_urls?.[0] || null,
+                        reportCount: 1,
+                        user: data.user?.name || 'Anonymous',
+                        verified: data.user?.is_verified || data.verified,
+                        location: data.location || '',
+                        image: data.evidence_url || null,
                         timestamp: data.created_at,
                     });
                 }
@@ -93,11 +99,15 @@ export default function ReportDetail() {
         // Supabase Realtime Subscription for comments table
         // We filter by report_id. Note: RLS must allow this.
 
-        // Fetch from Express API
+        // Fetch comments from Supabase
         const fetchComments = async () => {
             try {
-                const data = await reportsApi.getComments(id);
-                if (data) setComments(data.map(c => ({ ...c, user: { name: c.user_name } })));
+                const { data } = await supabase
+                    .from('comments')
+                    .select(`*, user:users!user_id(name, photo_url)`)
+                    .eq('report_id', id)
+                    .order('created_at', { ascending: true });
+                if (data) setComments(data.map(c => ({ ...c, user: c.user || { name: 'Anonymous' } })));
             } catch (err) {
                 console.warn('Failed to load comments:', err);
             }
@@ -144,8 +154,13 @@ export default function ReportDetail() {
         }
 
         try {
-            const comment = await reportsApi.postComment(id, newComment.trim());
-            setComments(prev => [...prev, { ...comment, user: { name: comment.user_name || user?.name } }]);
+            const { data: comment, error } = await supabase
+                .from('comments')
+                .insert({ report_id: id, user_id: user?.id, content: newComment.trim() })
+                .select(`*, user:users!user_id(name, photo_url)`)
+                .single();
+            if (error) throw error;
+            setComments(prev => [...prev, { ...comment, user: comment.user || { name: user?.name || 'Anonymous' } }]);
             setNewComment('');
             toast.success('Comment posted');
             setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -160,9 +175,10 @@ export default function ReportDetail() {
         setUpvoted(prev => ({ ...prev, [commentId]: true }));
 
         try {
-            const result = await reportsApi.upvoteComment(id, commentId);
+            const newUpvotes = (comments.find(c => c.id === commentId)?.upvotes || 0) + 1;
+            await supabase.from('comments').update({ upvotes: newUpvotes }).eq('id', commentId);
             setComments(prev => prev.map(c =>
-                c.id === commentId ? { ...c, upvotes: result.upvotes ?? (c.upvotes + 1) } : c
+                c.id === commentId ? { ...c, upvotes: newUpvotes } : c
             ));
         } catch (error) {
             console.error("Error upvoting:", error);
