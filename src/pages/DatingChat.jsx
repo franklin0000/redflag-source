@@ -642,7 +642,7 @@ export default function DatingChat() {
                     <button
                         onClick={() => {
                             toast.success("Select a destination to dispatch an Uber SafeRide!");
-                            navigate(`/dating/plan-date/${matchId}`);
+                            navigate(`/dating/plan-date/${targetUserId}`);
                         }}
                         className="p-2 rounded-full hover:bg-white/10 text-white/90 relative group"
                         title="Send Uber SafeRide"
@@ -666,7 +666,7 @@ export default function DatingChat() {
                         <span className="material-icons">call</span>
                     </button>
                     <button
-                        onClick={() => navigate(`/dating/plan-date/${matchId}`)}
+                        onClick={() => navigate(`/dating/plan-date/${targetUserId}`)}
                         className="p-2 rounded-full hover:bg-white/10 text-white/90 hidden md:block"
                         title="Plan Safe Date"
                     >

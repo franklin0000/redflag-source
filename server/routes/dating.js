@@ -283,4 +283,20 @@ router.delete('/messages/:matchId/all', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/dating/match-with/:partnerId — resolve the real match UUID for a partner
+// Used by DatePlanner to get the actual match record UUID before sending messages.
+router.get('/match-with/:partnerId', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT m.id FROM matches m
+       WHERE (m.user1_id=$1 AND m.user2_id=$2) OR (m.user1_id=$2 AND m.user2_id=$1)`,
+      [req.user.id, req.params.partnerId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'No match found' });
+    res.json({ match_id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -120,6 +120,7 @@ export const datingApi = {
   swipe: (target_id, direction) =>
     request('/api/dating/swipe', { method: 'POST', body: JSON.stringify({ target_id, direction }) }),
   getMatches: () => request('/api/dating/matches'),
+  getMatchWith: (partnerId) => request(`/api/dating/match-with/${partnerId}`),
   getMessages: (matchId) => request(`/api/dating/messages/${matchId}`),
   sendMessage: (matchId, content, iv) =>
     request(`/api/dating/messages/${matchId}`, {

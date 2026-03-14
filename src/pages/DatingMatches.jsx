@@ -33,7 +33,7 @@ export default function DatingMatches() {
 
                         {matches.map(match => (
                             <div
-                                key={match.matchId}
+                                key={match.match_id || match.id}
                                 onClick={() => navigate(`/dating/chat/${match.id}`)}
                                 className="flex flex-col items-center gap-2 cursor-pointer min-w-[80px]"
                             >
@@ -72,7 +72,7 @@ export default function DatingMatches() {
 
                         {matches.map(match => (
                             <div
-                                key={match.matchId}
+                                key={match.match_id || match.id}
                                 onClick={() => navigate(`/dating/chat/${match.id}`)}
                                 className={`flex items-center gap-4 p-3 rounded-xl transition-colors cursor-pointer ${match.unread > 0 ? 'bg-gray-800 border border-purple-500/20' : 'bg-gray-800/50 hover:bg-gray-800'}`}
                             >

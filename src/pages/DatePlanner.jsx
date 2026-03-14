@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 // eslint-disable-next-line no-unused-vars
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -11,22 +11,79 @@ import { useDating } from '../context/DatingContext';
 import { useAuth } from '../context/AuthContext';
 import { sendMessage } from '../services/chatService';
 import { safeRideService } from '../services/safeRideService';
+import { datingApi, usersApi } from '../services/api';
 import LocationSearchModal from '../components/Dating/LocationSearchModal';
 import InteractiveMap from '../components/Dating/InteractiveMap';
 
 export default function DatePlanner() {
-    const { matchId } = useParams(); // This is the room ID from DatingChat
+    // matchId param now contains the partner's user UUID (passed from DatingChat as targetUserId)
+    // Legacy: it may also be a composite uuid1_uuid2 — handle both
+    const { matchId: rawParam } = useParams();
     const navigate = useNavigate();
     const toast = useToast();
     const { matches } = useDating();
     const { user } = useAuth();
 
-    // Extract target user ID from the room ID (which combines two IDs with an underscore)
-    // Avoid split('_') because mock IDs like 'mock_match_1' contain underscores themselves.
-    const targetUserId = matchId && user ? matchId.replace(new RegExp(`^${user.id}_|_${user.id}$`), '') : null;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-    // Find the match
-    const match = matches.find(m => m.id === targetUserId) || { id: targetUserId, name: 'Match', isVerified: false };
+    // Extract the partner's user ID from the URL param
+    // If it's a plain UUID → it IS the partner ID
+    // If it's composite (uuid1_uuid2) → extract partner's UUID
+    const targetUserId = rawParam && user
+        ? (UUID_RE.test(rawParam)
+            ? rawParam
+            : rawParam.replace(new RegExp(`^${user.id}_|_${user.id}$`), ''))
+        : null;
+
+    // Find partner info from matches context
+    const contextMatch = matches.find(m => m.id === targetUserId);
+
+    // State for the real match UUID (from DB) — used for all API calls
+    const [realMatchId, setRealMatchId] = useState(contextMatch?.match_id || null);
+    // State for partner display info
+    const [partnerInfo, setPartnerInfo] = useState(contextMatch || null);
+    const fetchedRef = useRef(false);
+
+    useEffect(() => {
+        if (!targetUserId || !user?.id) return;
+
+        // If context match has the data, use it immediately
+        if (contextMatch?.match_id) {
+            setRealMatchId(contextMatch.match_id);
+            setPartnerInfo(contextMatch);
+            return;
+        }
+
+        if (fetchedRef.current) return;
+        fetchedRef.current = true;
+
+        // Fetch real match UUID and partner info from API
+        Promise.all([
+            datingApi.getMatchWith(targetUserId).catch(() => null),
+            usersApi.getUser(targetUserId).catch(() => null),
+        ]).then(([matchData, userData]) => {
+            if (matchData?.match_id) setRealMatchId(matchData.match_id);
+            else if (user?.id && targetUserId) {
+                // Fallback: composite (server resolveMatchId will handle it)
+                setRealMatchId([user.id, targetUserId].sort().join('_'));
+            }
+            if (userData) {
+                setPartnerInfo({ id: userData.id, name: userData.name, photo: userData.avatar_url, isVerified: userData.is_verified });
+            }
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [targetUserId, user?.id]);
+
+    // Combine: use live context match if available (re-renders when matches loads)
+    useEffect(() => {
+        if (contextMatch?.match_id && !realMatchId) {
+            setRealMatchId(contextMatch.match_id);
+            setPartnerInfo(contextMatch);
+        }
+    }, [contextMatch, realMatchId]);
+
+    // The match object used for display
+    const match = partnerInfo || { id: targetUserId, name: 'Match', isVerified: false };
 
     const [loading, setLoading] = useState(true);
     const [places, setPlaces] = useState([]);
@@ -133,16 +190,23 @@ export default function DatePlanner() {
         setConfirmingPlace(place);
     };
 
+    // Effective matchId for API calls — real UUID if resolved, else composite fallback
+    const effectiveMatchId = realMatchId || (user?.id && targetUserId ? [user.id, targetUserId].sort().join('_') : null);
+
     const handleInvite = async () => {
+        if (!effectiveMatchId) {
+            toast.error("Match not found. Please go back and try again.");
+            return;
+        }
         try {
             await sendMessage(
-                matchId,
+                effectiveMatchId,
                 `[date_invite] Let's meet at ${confirmingPlace.name}!📍 ${confirmingPlace.address}`
             );
             toast.success(`Invite to ${confirmingPlace.name} sent to ${match.name}!`);
         } catch (err) {
             console.error("Failed to send invite", err);
-            toast.error("Failed to send invite");
+            toast.error(`Failed to send invite: ${err.message}`);
         }
         setConfirmingPlace(null);
         navigate(-1);
@@ -164,40 +228,45 @@ export default function DatePlanner() {
     };
 
     const handleLiveTrack = async () => {
-        try {
-            await sendMessage(
-                matchId,
-                `[live_location_invite] I'm sharing my live location with you for our date!`
-            );
-            toast.success(`Started Live Radar with ${match.name}!`);
-            navigate(`/dating/live-radar/${matchId}`);
-        } catch (err) {
-            console.error("Failed to start live track", err);
-            toast.error("Failed to start live tracking");
-        }
+        // Navigate first — the radar page uses socket for real-time, message is just a notification
+        const navTarget = effectiveMatchId || targetUserId;
+        if (!navTarget) { toast.error("Match not found."); return; }
+
+        // Try to send notification message; navigate regardless
+        sendMessage(
+            effectiveMatchId,
+            `[live_location_invite] I'm sharing my live location with you for our date!`
+        ).catch(err => console.warn("Live track message failed (non-fatal):", err.message));
+
+        toast.success(`Live Radar started!`);
+        navigate(`/dating/live-radar/${navTarget}`);
     };
 
     const handleSafeRide = async () => {
         try {
             const sessionId = await safeRideService.requestRide(
                 user.id,
-                match.id,
-                matchId,
+                match.id || targetUserId,
+                effectiveMatchId || targetUserId,
                 confirmingPlace.name,
                 confirmingPlace.address,
                 confirmingPlace.lat,
                 confirmingPlace.lng
             );
 
-            await sendMessage(
-                matchId,
-                `[saferide_invite:${sessionId}] I've ordered a SafeRide for you to get to ${confirmingPlace.name}!`
-            );
+            // Try to notify partner — non-fatal if it fails
+            if (effectiveMatchId) {
+                sendMessage(
+                    effectiveMatchId,
+                    `[saferide_invite:${sessionId}] I've ordered a SafeRide for you to get to ${confirmingPlace.name}!`
+                ).catch(err => console.warn("SafeRide message failed (non-fatal):", err.message));
+            }
+
             toast.success(`SafeRide Sent!`);
             navigate(`/dating/saferide/${sessionId}`);
         } catch (err) {
             console.error("Failed to send SafeRide", err);
-            toast.error("Failed to send SafeRide");
+            toast.error(`Failed to send SafeRide: ${err.message}`);
         }
     };
 
