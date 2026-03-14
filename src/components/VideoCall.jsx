@@ -112,14 +112,16 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
 
     // Listen for Answer Signal (if initiator)
     useEffect(() => {
-        if (!incomingSignal && connectionRef.current) {
+        if (!incomingSignal) {
             const unsubscribe = callService.subscribeToSignals(
                 matchId,
                 userId,
                 () => { }, // Ignore new offers
                 (signal) => {
-                    callService.finalizeCall(signal);
-                    setStatus('Connected');
+                    if (connectionRef.current) {
+                        callService.finalizeCall(signal);
+                        setStatus('Connected');
+                    }
                 },
                 onEnd
             );

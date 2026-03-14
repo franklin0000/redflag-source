@@ -163,8 +163,23 @@ app.post('/api/sumsub-token', require('./middleware/auth').requireAuth, async (r
 
 // ── Resolve composite matchId helper (for socket handlers) ───
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-async function resolveMatchId(rawId) {
-  if (UUID_RE.test(rawId)) return rawId;
+async function resolveMatchId(rawId, userId = null) {
+  if (UUID_RE.test(rawId)) {
+    // 1. Is it already a valid match ID?
+    const { rows } = await db.query('SELECT id FROM matches WHERE id = $1', [rawId]);
+    if (rows.length) return rawId;
+
+    // 2. Is it a partner ID? If so, find the match between this user and that partner.
+    if (userId) {
+      const matchByPartner = await db.query(
+        'SELECT id FROM matches WHERE (user1_id = $1 AND user2_id = $2) OR (user1_id = $2 AND user2_id = $1)',
+        [userId, rawId]
+      );
+      if (matchByPartner.rows.length) return matchByPartner.rows[0].id;
+    }
+    return rawId; // Fallback to raw ID if not found in matches table
+  }
+
   const parts = rawId.split('_');
   if (parts.length === 2 && UUID_RE.test(parts[0]) && UUID_RE.test(parts[1])) {
     const { rows } = await db.query(
@@ -234,7 +249,7 @@ io.on('connection', (socket) => {
 
   socket.on('join_match', async (rawMatchId) => {
     try {
-      const matchId = await resolveMatchId(rawMatchId);
+      const matchId = await resolveMatchId(rawMatchId, userId);
       const { rows } = await db.query(
         'SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
         [matchId, userId]
@@ -258,7 +273,7 @@ io.on('connection', (socket) => {
   // Send message via socket
   socket.on('send_message', async ({ matchId: rawMatchId, content, iv }) => {
     try {
-      const matchId = await resolveMatchId(rawMatchId);
+      const matchId = await resolveMatchId(rawMatchId, userId);
       const match = await db.query(
         'SELECT * FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
         [matchId, userId]
@@ -331,14 +346,14 @@ io.on('connection', (socket) => {
 
   // Typing indicator
   socket.on('typing', async ({ matchId: rawMatchId, isTyping }) => {
-    const matchId = await resolveMatchId(rawMatchId);
+    const matchId = await resolveMatchId(rawMatchId, userId);
     socket.to(`match:${matchId}`).emit('typing', { matchId: rawMatchId, userId, isTyping });
   });
 
   // WebRTC call signaling — matchId must be included in payload so receivers can filter
   socket.on('call:signal', async ({ matchId: rawMatchId, signal, from, type, callType }) => {
     console.log('[Socket] call:signal received:', { rawMatchId, from, type, callType });
-    const matchId = await resolveMatchId(rawMatchId);
+    const matchId = await resolveMatchId(rawMatchId, userId);
     console.log('[Socket] Resolved matchId:', matchId);
     socket.to(`match:${matchId}`).emit('call:signal', { matchId: rawMatchId, signal, from, type, callType });
 
@@ -367,7 +382,7 @@ io.on('connection', (socket) => {
 
   // Live Radar — location sharing
   socket.on('location:update', async ({ matchId: rawMatchId, lat, lng }) => {
-    const matchId = await resolveMatchId(rawMatchId);
+    const matchId = await resolveMatchId(rawMatchId, userId);
     socket.to(`match:${matchId}`).emit('location:update', { userId, lat, lng });
   });
 

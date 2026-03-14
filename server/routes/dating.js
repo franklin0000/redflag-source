@@ -5,9 +5,26 @@ const { requireAuth } = require('../middleware/auth');
 // ── Helper: resolve composite "uuid_uuid" matchId to actual match UUID ──────
 // DatingChat constructs matchId as [user.id, partnerId].sort().join('_').
 // This helper accepts both real UUIDs and composite keys.
-async function resolveMatchId(rawId) {
+// DatingChat constructs matchId as [user.id, partnerId].sort().join('_').
+// This helper accepts both real UUIDs and composite keys.
+async function resolveMatchId(rawId, userId = null) {
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (UUID_RE.test(rawId)) return rawId; // already a valid UUID
+
+  if (UUID_RE.test(rawId)) {
+    // 1. Is it already a valid match ID?
+    const { rows } = await db.query('SELECT id FROM matches WHERE id = $1', [rawId]);
+    if (rows.length) return rawId;
+
+    // 2. Is it a partner ID? If so, find the match between this user and that partner.
+    if (userId) {
+      const matchByPartner = await db.query(
+        'SELECT id FROM matches WHERE (user1_id = $1 AND user2_id = $2) OR (user1_id = $2 AND user2_id = $1)',
+        [userId, rawId]
+      );
+      if (matchByPartner.rows.length) return matchByPartner.rows[0].id;
+    }
+  }
+
   const parts = rawId.split('_');
   if (parts.length === 2 && UUID_RE.test(parts[0]) && UUID_RE.test(parts[1])) {
     const { rows } = await db.query(
@@ -16,7 +33,7 @@ async function resolveMatchId(rawId) {
     );
     if (rows.length) return rows[0].id;
   }
-  return null; // not resolvable — caller should return 404
+  return null; // not resolvable
 }
 
 // GET /api/dating/profile — get my dating profile
@@ -46,7 +63,7 @@ router.post('/profile', requireAuth, async (req, res) => {
          updated_at=NOW()
        RETURNING *`,
       [req.user.id, bio, age || null, gender || null,
-       photos || [], interests || [], location || null, lat || null, lng || null]
+      photos || [], interests || [], location || null, lat || null, lng || null]
     );
     // also update user lat/lng for geo queries
     if (lat && lng) {
@@ -152,7 +169,7 @@ router.post('/swipe', requireAuth, async (req, res) => {
            VALUES ($1,'match','New Match!','You have a new match!', $2),
                   ($3,'match','New Match!','You have a new match!', $4)`,
           [req.user.id, JSON.stringify({ matched_with: target_id }),
-           target_id, JSON.stringify({ matched_with: req.user.id })]
+            target_id, JSON.stringify({ matched_with: req.user.id })]
         );
       }
     }
@@ -204,7 +221,7 @@ router.get('/matches', requireAuth, async (req, res) => {
 // GET /api/dating/messages/:matchId
 router.get('/messages/:matchId', requireAuth, async (req, res) => {
   try {
-    const matchId = await resolveMatchId(req.params.matchId);
+    const matchId = await resolveMatchId(req.params.matchId, req.user.id);
     if (!matchId) return res.status(404).json({ error: 'Match not found' });
     const match = await db.query(
       'SELECT id FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
@@ -229,7 +246,7 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
   const { content, iv } = req.body;
   if (!content) return res.status(400).json({ error: 'content required' });
   try {
-    const matchId = await resolveMatchId(req.params.matchId);
+    const matchId = await resolveMatchId(req.params.matchId, req.user.id);
     if (!matchId) return res.status(404).json({ error: 'Match not found' });
     const match = await db.query(
       'SELECT * FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
@@ -257,7 +274,7 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
 // PATCH /api/dating/messages/:matchId/read — mark as read
 router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
   try {
-    const matchId = await resolveMatchId(req.params.matchId);
+    const matchId = await resolveMatchId(req.params.matchId, req.user.id);
     if (!matchId) return res.status(404).json({ error: 'Match not found' });
     await db.query(
       `UPDATE messages SET is_read = TRUE
@@ -273,7 +290,7 @@ router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
 // DELETE /api/dating/messages/:matchId/all — clear chat history
 router.delete('/messages/:matchId/all', requireAuth, async (req, res) => {
   try {
-    const matchId = await resolveMatchId(req.params.matchId);
+    const matchId = await resolveMatchId(req.params.matchId, req.user.id);
     if (!matchId) return res.status(404).json({ error: 'Match not found' });
     const { rows } = await db.query(
       'SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
