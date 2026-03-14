@@ -1,67 +1,46 @@
-// ── RedFlag API Client ─────────────────────────────────────────
-// Replaces all Supabase calls with calls to our own Render backend
+// api.js — Express.js backend client (no Supabase)
 
 const BASE = import.meta.env.VITE_API_URL || '';
 
-function getToken() {
-  return localStorage.getItem('rf_token');
-}
+// ── TOKEN MANAGEMENT ─────────────────────────────────────────
+export const getToken = () => localStorage.getItem('rf_token');
+export const setToken = (t) => t ? localStorage.setItem('rf_token', t) : localStorage.removeItem('rf_token');
+const getRefreshToken = () => localStorage.getItem('rf_refresh');
+const setRefreshToken = (t) => t ? localStorage.setItem('rf_refresh', t) : localStorage.removeItem('rf_refresh');
 
-function setToken(token) {
-  if (token) localStorage.setItem('rf_token', token);
-  else localStorage.removeItem('rf_token');
-}
-
-function setRefreshToken(token) {
-  if (token) localStorage.setItem('rf_refresh', token);
-  else localStorage.removeItem('rf_refresh');
-}
-
-function getRefreshToken() {
-  return localStorage.getItem('rf_refresh');
-}
-
+// ── HTTP REQUEST ──────────────────────────────────────────────
 async function request(path, options = {}) {
   const token = getToken();
+
   const headers = {
-    'Content-Type': 'application/json',
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   };
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  let res = await fetch(`${BASE}${path}`, { ...options, headers });
 
   // Auto-refresh on 401
-  if (res.status === 401 && getRefreshToken()) {
+  if (res.status === 401) {
     const refreshed = await tryRefresh();
     if (refreshed) {
       headers.Authorization = `Bearer ${getToken()}`;
-      const retry = await fetch(`${BASE}${path}`, { ...options, headers });
-      if (!retry.ok) {
-        const err = await retry.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(err.error || 'Request failed');
-      }
-      return retry.json();
-    } else {
-      setToken(null);
-      setRefreshToken(null);
-      window.location.hash = '/login';
-      throw new Error('Session expired');
+      res = await fetch(`${BASE}${path}`, { ...options, headers });
     }
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || 'Request failed');
+    throw new Error(err.error || `Request failed (${res.status})`);
   }
 
   if (res.status === 204) return null;
   const text = await res.text();
-  if (!text || !text.trim()) throw new Error('Server is waking up. Please try again in a moment.');
+  if (!text || !text.trim()) return null;
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error('Server returned invalid response. Please try again.');
+    return text;
   }
 }
 
@@ -92,38 +71,30 @@ export const authApi = {
       body: JSON.stringify({ email, password, name, gender }),
     }),
 
-  login: async (email, password) => {
-    const data = await request('/api/auth/login', {
+  login: (email, password) =>
+    request('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
-    });
-    setToken(data.token);
-    setRefreshToken(data.refresh_token);
-    return data;
-  },
+    }),
 
-  logout: async () => {
-    try {
-      await request('/api/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ refresh_token: getRefreshToken() }),
-      });
-    } finally {
-      setToken(null);
-      setRefreshToken(null);
-    }
-  },
+  logout: () =>
+    request('/api/auth/logout', { method: 'POST' }).catch(() => {}),
 
   me: () => request('/api/auth/me'),
 
+  walletLogin: (address) =>
+    request('/api/auth/wallet', {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    }),
+
   getToken,
-  setToken,
-  setRefreshToken,
   isLoggedIn: () => !!getToken(),
 };
 
 // ── USERS ─────────────────────────────────────────────────────
 export const usersApi = {
+  getMe: () => request('/api/users/me'),
   getUser: (id) => request(`/api/users/${id}`),
   updateMe: (data) => request('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
   verifyIdentity: (gender) => request('/api/users/me/verify', { method: 'POST', body: JSON.stringify({ gender }) }),
@@ -133,17 +104,9 @@ export const usersApi = {
       body: JSON.stringify({ is_paid: isPaid }),
     }),
   uploadAvatar: async (file) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('folder', 'avatars');
-    const token = getToken();
-    const res = await fetch(`${BASE}/api/users/avatar`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    return res.json();
+    const formData = new FormData();
+    formData.append('file', file);
+    return request('/api/users/avatar', { method: 'POST', body: formData });
   },
 };
 
@@ -165,6 +128,8 @@ export const datingApi = {
     }),
   markRead: (matchId) =>
     request(`/api/dating/messages/${matchId}/read`, { method: 'PATCH' }),
+  deleteMessages: (matchId) =>
+    request(`/api/dating/messages/${matchId}/all`, { method: 'DELETE' }),
 };
 
 // ── POSTS ─────────────────────────────────────────────────────
@@ -177,6 +142,9 @@ export const postsApi = {
     request(`/api/posts/${id}/react`, { method: 'POST', body: JSON.stringify({ emoji }) }),
   reply: (id, content) =>
     request(`/api/posts/${id}/reply`, { method: 'POST', body: JSON.stringify({ content }) }),
+  getComments: (id) => request(`/api/posts/${id}/comments`),
+  postComment: (id, content) =>
+    request(`/api/posts/${id}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
 };
 
 // ── REPORTS ───────────────────────────────────────────────────
@@ -187,21 +155,13 @@ export const reportsApi = {
   createReport: (data) =>
     request('/api/reports', { method: 'POST', body: JSON.stringify(data) }),
   getMyReports: () => request('/api/reports/me'),
+  getCount: () => request('/api/reports/count'),
   upvote: (id) => request(`/api/reports/${id}/upvote`, { method: 'POST' }),
   uploadEvidence: async (reportId, file) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('folder', 'evidence');
-    const token = getToken();
-    const res = await fetch(`${BASE}/api/reports/${reportId}/evidence`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    return res.json();
+    const formData = new FormData();
+    formData.append('file', file);
+    return request(`/api/reports/${reportId}/evidence`, { method: 'POST', body: formData });
   },
-  // Comments
   getComments: (reportId) => request(`/api/reports/${reportId}/comments`),
   postComment: (reportId, content) =>
     request(`/api/reports/${reportId}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
@@ -222,6 +182,11 @@ export const searchesApi = {
   getCount: () => request('/api/searches/count'),
   create: (query, results) =>
     request('/api/searches', { method: 'POST', body: JSON.stringify({ query, results }) }),
+  backgroundCheck: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request('/api/searches/background-check', { method: 'POST', body: formData });
+  },
 };
 
 // ── STATS ──────────────────────────────────────────────────────
@@ -272,25 +237,29 @@ export const guardianApi = {
   getMine: () => request('/api/guardian/sessions/mine'),
   getById: (id) => request(`/api/guardian/sessions/${id}`),
   viewByToken: (token) => request(`/api/guardian/view/${token}`),
-  updateLocation: (id, lat, lng) => request(`/api/guardian/sessions/${id}/location`, { method: 'PATCH', body: JSON.stringify({ lat, lng }) }),
+  updateLocation: (id, lat, lng) =>
+    request(`/api/guardian/sessions/${id}/location`, { method: 'PATCH', body: JSON.stringify({ lat, lng }) }),
   checkIn: (id) => request(`/api/guardian/sessions/${id}/checkin`, { method: 'POST' }),
-  triggerSOS: (id, location) => request(`/api/guardian/sessions/${id}/sos`, { method: 'POST', body: JSON.stringify({ location }) }),
+  triggerSOS: (id, location) =>
+    request(`/api/guardian/sessions/${id}/sos`, { method: 'POST', body: JSON.stringify({ location }) }),
   cancelSOS: (id) => request(`/api/guardian/sessions/${id}/sos/cancel`, { method: 'POST' }),
   end: (id) => request(`/api/guardian/sessions/${id}/end`, { method: 'POST' }),
 };
 
+// ── LOCATION FLAGS ─────────────────────────────────────────────
+export const locationFlagsApi = {
+  getAll: (lat, lng, radius = 10) =>
+    request(`/api/location-flags?lat=${lat}&lng=${lng}&radius=${radius}`),
+  create: (data) =>
+    request('/api/location-flags', { method: 'POST', body: JSON.stringify(data) }),
+  remove: (id) => request(`/api/location-flags/${id}`, { method: 'DELETE' }),
+};
+
 // ── FILE UPLOAD (generic) ─────────────────────────────────────
 export async function uploadFile(file, folder = 'media') {
-  const form = new FormData();
-  form.append('file', file);
-  form.append('folder', folder);
-  const token = getToken();
-  const res = await fetch(`${BASE}/api/upload`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  });
-  if (!res.ok) throw new Error('Upload failed');
-  const data = await res.json();
-  return data.url;
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('folder', folder);
+  const data = await request('/api/upload', { method: 'POST', body: formData });
+  return data?.url || null;
 }

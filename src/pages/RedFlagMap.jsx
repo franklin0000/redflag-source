@@ -5,9 +5,9 @@ import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl/m
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { uploadFlagMedia } from '../services/storageService';
+import { locationFlagsApi, uploadFile } from '../services/api';
 import { getCurrentLocation } from '../services/locationService';
-import { supabase } from '../services/supabase';
+import { getSocket } from '../services/socketService';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -35,22 +35,22 @@ export default function RedFlagMap() {
     useEffect(() => {
         let isMounted = true;
 
-        supabase.from('location_flags').select('*').order('created_at', { ascending: false })
-            .then(({ data }) => { if (isMounted) setFlags(data || []); })
+        locationFlagsApi.getAll(40.7128, -74.0060, 50)
+            .then(data => { if (isMounted) setFlags(data || []); })
             .catch(err => console.error('Error fetching flags:', err));
 
-        const channel = supabase.channel('location_flags_realtime')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'location_flags' }, (payload) => {
-                if (isMounted) {
-                    setFlags(prev => [payload.new, ...prev]);
-                    toast.success(`A new ${payload.new.flag_type} flag was dropped!`);
-                }
-            })
-            .subscribe();
+        const socket = getSocket();
+        const onNewFlag = (flag) => {
+            if (isMounted) {
+                setFlags(prev => [flag, ...prev]);
+                toast.success(`A new ${flag.flag_type} flag was dropped!`);
+            }
+        };
+        socket?.on('map:new_flag', onNewFlag);
 
         return () => {
             isMounted = false;
-            supabase.removeChannel(channel);
+            socket?.off('map:new_flag', onNewFlag);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -85,12 +85,12 @@ export default function RedFlagMap() {
             if (flagMediaFiles.length > 0) {
                 toast.info('Uploading media...');
                 for (const file of flagMediaFiles) {
-                    const url = await uploadFlagMedia(file, user.id);
+                    const url = await uploadFile(file, 'flags');
                     const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'document';
                     uploadedMedia.push({ url, type, name: file.name });
                 }
             }
-            const { error } = await supabase.from('location_flags').insert({
+            await locationFlagsApi.create({
                 place_id: selectedPlace.place_id,
                 place_name: selectedPlace.name,
                 lat: selectedPlace.lat,
@@ -98,9 +98,7 @@ export default function RedFlagMap() {
                 flag_type: newFlagType,
                 comment: newFlagComment,
                 media: uploadedMedia,
-                user_id: user?.id,
             });
-            if (error) throw error;
             toast.success('Flag dropped successfully!');
             setIsAddingFlag(false); setNewFlagComment(''); setFlagMediaFiles([]); setSelectedPlace(null);
         } catch (err) {
@@ -113,8 +111,7 @@ export default function RedFlagMap() {
 
     const handleDeleteFlag = async (flag) => {
         try {
-            const { error } = await supabase.from('location_flags').delete().eq('id', flag.id);
-            if (error) throw error;
+            await locationFlagsApi.remove(flag.id);
             setFlags(prev => prev.filter(f => f.id !== flag.id));
             setSelectedFlag(null);
             toast.success('Flag removed');

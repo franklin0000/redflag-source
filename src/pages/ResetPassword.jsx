@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../services/supabase';
+import { authExtras } from '../services/api';
 import { useToast } from '../context/ToastContext';
 
 export default function ResetPassword() {
@@ -10,8 +10,10 @@ export default function ResetPassword() {
     const [error, setError] = useState('');
     const toast = useToast();
     const navigate = useNavigate();
-    // Supabase sends the token in the URL hash, auth listener handles the session
-    // We just need to call updateUser
+    // Token comes from the reset link URL: /#/reset-password?token=TOKEN
+    const token = new URLSearchParams(
+        window.location.hash.includes('?') ? window.location.hash.split('?')[1] : window.location.search
+    ).get('token') || '';
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -26,8 +28,7 @@ export default function ResetPassword() {
         }
         setLoading(true);
         try {
-            const { error: err } = await supabase.auth.updateUser({ password });
-            if (err) throw err;
+            await authExtras.resetPassword(token, password);
             toast.success('Password updated! Please log in.');
             navigate('/login', { replace: true });
         } catch (err) {

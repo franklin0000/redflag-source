@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { supabase } from '../services/supabase';
-import { uploadCommunityMedia } from '../services/storageService';
+import { postsApi, usersApi, uploadFile } from '../services/api';
+import { getSocket } from '../services/socketService';
 
 const ROOM_CONFIG = {
     women: {
@@ -109,20 +109,11 @@ export default function CommunityRoom() {
         const fetchPosts = async () => {
             let fetchedPosts = [];
             try {
-                const { data, error: _error } = await supabase
-                    .from('posts')
-                    .select(`
-                        *,
-                        user:users!user_id (name, photo_url)
-                    `)
-                    .eq('room_id', roomId)
-                    .order('created_at', { ascending: false });
-
-                if (data) {
-                    fetchedPosts = mapPosts(data);
-                }
+                const data = await postsApi.getFeed(50, 0);
+                const filtered = (data || []).filter(p => p.room_id === roomId);
+                fetchedPosts = mapPosts(filtered);
             } catch (err) {
-                console.warn("Failed to fetch posts from Supabase:", err);
+                console.warn("Failed to fetch posts:", err);
             }
 
             setPosts(fetchedPosts);
@@ -131,32 +122,20 @@ export default function CommunityRoom() {
 
         fetchPosts();
 
-        // Supabase real-time subscription
-        const channel = supabase.channel(`community_posts_${roomId}`)
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'posts', filter: `room_id=eq.${roomId}` },
-                async (payload) => {
-                    // Fetch the complete post with user relationships
-                    let completePost = payload.new;
-                    if (completePost.user_id) {
-                        const { data } = await supabase.from('users').select('name, photo_url').eq('id', completePost.user_id).single();
-                        if (data) {
-                            completePost.user = data;
-                        }
-                    }
-
-                    setPosts(prev => {
-                        if (prev.some(p => p.id === completePost.id)) return prev;
-                        const mapped = mapPosts([completePost])[0];
-                        return [mapped, ...prev];
-                    });
-                }
-            )
-            .subscribe();
+        // Socket.io real-time subscription
+        const socket = getSocket();
+        socket?.emit('join_community_room', roomId);
+        const onNewPost = (post) => {
+            setPosts(prev => {
+                if (prev.some(p => p.id === post.id)) return prev;
+                const mapped = mapPosts([post])[0];
+                return [mapped, ...prev];
+            });
+        };
+        socket?.on('community:new_post', onNewPost);
 
         return () => {
-            supabase.removeChannel(channel);
+            socket?.off('community:new_post', onNewPost);
         };
     }, [roomId, room]);
 
@@ -253,19 +232,7 @@ export default function CommunityRoom() {
         }));
 
         try {
-            // Try RPC first; fall back to direct update if RPC doesn't exist
-            const { error } = await supabase.rpc('increment_reaction', {
-                post_id: postId,
-                emoji: emoji
-            });
-            if (error) {
-                // Fallback: fetch current reactions and update directly
-                const { data: post } = await supabase
-                    .from('posts').select('reactions').eq('id', postId).single();
-                const current = post?.reactions || { '❤️': 0, '👏': 0, '😢': 0, '😡': 0 };
-                current[emoji] = (current[emoji] || 0) + 1;
-                await supabase.from('posts').update({ reactions: current }).eq('id', postId);
-            }
+            await postsApi.react(postId, emoji);
         } catch (error) {
             console.error("Error adding reaction:", error);
         }
@@ -293,18 +260,7 @@ export default function CommunityRoom() {
         setExpandedReplies(prev => ({ ...prev, [postId]: true }));
 
         try {
-            // Try RPC first; fall back to direct update if RPC doesn't exist
-            const { error } = await supabase.rpc('add_reply', {
-                post_id: postId,
-                reply_data: reply
-            });
-            if (error) {
-                // Fallback: fetch current replies and append
-                const { data: post } = await supabase
-                    .from('posts').select('replies').eq('id', postId).single();
-                const updated = [...(post?.replies || []), reply];
-                await supabase.from('posts').update({ replies: updated }).eq('id', postId);
-            }
+            await postsApi.reply(postId, newText.trim());
             toast.success('Reply posted');
         } catch (error) {
             console.error("Error adding reply:", error);
@@ -358,39 +314,20 @@ export default function CommunityRoom() {
 
             if (selectedFile) {
                 try {
-                    mediaUrl = await uploadCommunityMedia(selectedFile, roomId);
+                    mediaUrl = await uploadFile(selectedFile, 'community');
                 } catch (uploadError) {
                     console.error("File upload failed:", uploadError);
                     toast.error("Failed to upload file.");
-                    // Revert optimistic update
                     setPosts(prev => prev.filter(p => p.id !== tempId));
                     setIsPosting(false);
                     return;
                 }
             }
 
-            const { data, error } = await supabase
-                .from('posts')
-                .insert([
-                    {
-                        user_id: user.id,
-                        room_id: roomId,
-                        content: optimisticPost.content,
-                        media_url: mediaUrl,
-                        media_type: fileType,
-                        media_name: fileName
-                    }
-                ])
-                .select(`
-                    *,
-                    user:users!user_id (name, photo_url)
-                `)
-                .single();
-
-            if (error) throw error;
+            const data = await postsApi.createPost(optimisticPost.content, mediaUrl);
 
             // 2. Replace Optimistic Post with Real Post
-            const realPost = mapPosts([data])[0];
+            const realPost = mapPosts([{ ...data, room_id: roomId, media_type: fileType, media_name: fileName }])[0];
             setPosts(prev => prev.map(p => p.id === tempId ? realPost : p));
             toast.success('Post published! 🎉');
 
@@ -418,10 +355,9 @@ export default function CommunityRoom() {
 
         // For now, I will use supabase to update directly if updateProfile isn't available
         try {
-            await supabase.from('users').update({ gender }).eq('id', user.id);
+            await usersApi.updateMe({ gender });
             setGenderModalOpen(false);
             toast.success("Profile updated!");
-            // simpler than re-rendering auth context
             window.location.reload();
         } catch (e) {
             console.error(e);

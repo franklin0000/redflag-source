@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../services/supabase';
+import { authExtras } from '../services/api';
 
 export default function ForgotPassword() {
     const [email, setEmail] = useState('');
@@ -13,10 +13,7 @@ export default function ForgotPassword() {
         setError('');
         setLoading(true);
         try {
-            const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: window.location.origin + '/#/reset-password',
-            });
-            if (err) throw err;
+            await authExtras.forgotPassword(email);
             setSent(true);
         } catch (err) {
             setError(err.message || 'Failed to send reset email.');

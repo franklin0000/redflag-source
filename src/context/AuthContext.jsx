@@ -1,6 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { authApi, usersApi, setToken, getToken } from '../services/api';
+import { connectSocket, disconnectSocket } from '../services/socketService';
+
+const setRefreshToken = (t) => t
+  ? localStorage.setItem('rf_refresh', t)
+  : localStorage.removeItem('rf_refresh');
 
 const AuthContext = createContext(null);
 
@@ -13,133 +18,82 @@ export const AuthProvider = ({ children }) => {
         return () => { mountedRef.current = false; };
     }, []);
 
-    const fetchPublicUser = async (uid, authSource) => {
-        const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', uid)
-            .single();
-
-        if (error && error.code !== 'PGRST116') {
-            console.error('Error fetching public user:', error);
-        }
-
-        let pUser = data || {};
-
-        return {
-            ...pUser,
-            ...authSource,
-            id: uid,
-            isPaid: pUser.is_paid || false,
-            isVerified: pUser.is_verified || false,
-            isVerifiedWeb3: pUser.is_verified_web3 || false,
-        };
-    };
-
+    // Restore session from stored token on mount
     useEffect(() => {
         const initializeAuth = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                const fullUser = await fetchPublicUser(session.user.id, session.user);
-                if (mountedRef.current) setUser(fullUser);
+            if (!getToken()) {
+                if (mountedRef.current) setLoading(false);
+                return;
             }
-            if (mountedRef.current) setLoading(false);
+            try {
+                const data = await authApi.me();
+                if (mountedRef.current && data) {
+                    setUser(normalizeUser(data));
+                    connectSocket();
+                }
+            } catch {
+                setToken(null);
+                setRefreshToken(null);
+            } finally {
+                if (mountedRef.current) setLoading(false);
+            }
         };
 
         initializeAuth();
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-                if (session?.user) {
-                    const fullUser = await fetchPublicUser(session.user.id, session.user);
-                    if (mountedRef.current) setUser(fullUser);
-                }
-            } else if (event === 'SIGNED_OUT') {
-                if (mountedRef.current) setUser(null);
-            }
-        });
-
-        return () => {
-            subscription?.unsubscribe();
-        };
     }, []);
 
+    const normalizeUser = (data) => ({
+        ...data,
+        isPaid: data.is_paid || false,
+        isVerified: data.is_verified || false,
+        isVerifiedWeb3: data.is_verified_web3 || false,
+    });
+
     const signUp = async (email, password, name, gender) => {
-        const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-        });
-
-        if (error) throw error;
-
-        if (data?.user) {
-            // Upsert into public.users
-            const { error: upsertError } = await supabase
-                .from('users')
-                .upsert({
-                    id: data.user.id,
-                    email,
-                    name,
-                    gender,
-                });
-            if (upsertError) console.error('Error creating public user:', upsertError);
-
-            const fullUser = await fetchPublicUser(data.user.id, data.user);
-            if (mountedRef.current) setUser(fullUser);
-        }
-
+        const data = await authApi.register(email, password, name, gender);
+        setToken(data.token);
+        setRefreshToken(data.refresh_token);
+        if (mountedRef.current) setUser(normalizeUser(data.user));
+        connectSocket();
         return data;
     };
 
     const signIn = async (email, password) => {
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
-        if (error) throw error;
-
-        const fullUser = await fetchPublicUser(data.user.id, data.user);
-        if (mountedRef.current) setUser(fullUser);
+        const data = await authApi.login(email, password);
+        setToken(data.token);
+        setRefreshToken(data.refresh_token);
+        if (mountedRef.current) setUser(normalizeUser(data.user));
+        connectSocket();
         return data;
     };
 
     const signOut = async () => {
-        const { error } = await supabase.auth.signOut();
-        if (error) console.error('Signout error:', error);
+        await authApi.logout();
+        setToken(null);
+        setRefreshToken(null);
+        disconnectSocket();
         if (mountedRef.current) setUser(null);
     };
 
     const updateProfile = async (updates) => {
-        if (!user?.id) return;
-        const { data, error } = await supabase
-            .from('users')
-            .update(updates)
-            .eq('id', user.id)
-            .select()
-            .single();
-
-        if (error) throw error;
-        const updated = fetchPublicUser(user.id, user);
-        if (mountedRef.current) setUser(prev => ({ ...prev, ...updated }));
-        return updated;
+        const data = await usersApi.updateMe(updates);
+        if (mountedRef.current && data) setUser(prev => ({ ...prev, ...normalizeUser(data) }));
+        return data;
     };
 
     const updateSubscription = async (status) => {
-        if (!user?.id) return;
         const isPaid = status === 'paid' || status === true;
-        const { error } = await supabase
-            .from('users')
-            .update({ is_paid: isPaid })
-            .eq('id', user.id);
-
-        if (error) throw error;
+        await usersApi.updateSubscription(isPaid);
         if (mountedRef.current) setUser(prev => ({ ...prev, isPaid, is_paid: isPaid }));
     };
 
     const refreshUser = async () => {
-        if (!user?.id) return;
-        const fullUser = await fetchPublicUser(user.id, user);
-        if (mountedRef.current) setUser(fullUser);
+        try {
+            const data = await authApi.me();
+            if (mountedRef.current && data) setUser(normalizeUser(data));
+        } catch {
+            // silently fail
+        }
     };
 
     return (

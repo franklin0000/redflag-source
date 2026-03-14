@@ -19,7 +19,12 @@ router.post('/background-check', requireAuth, upload.single('file'), (req, res) 
   py.stdout.on('data', (data) => { output += data.toString(); });
   py.stderr.on('data', (data) => { errorOutput += data.toString(); });
 
+  py.on('error', (err) => {
+    if (!res.headersSent) res.status(500).json({ error: `Process error: ${err.message}` });
+  });
+
   py.on('close', (code) => {
+    if (res.headersSent) return;
     try {
       const parsed = JSON.parse(output);
       res.json(parsed);

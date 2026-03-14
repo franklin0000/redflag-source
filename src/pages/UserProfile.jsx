@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../services/supabase';
+import { usersApi, postsApi, reportsApi } from '../services/api';
 import ReportUser from '../components/ReportUser';
 
 export default function UserProfile() {
@@ -28,13 +28,14 @@ export default function UserProfile() {
     // Fetch comments for a post
     const fetchComments = async (postId) => {
         setLoadingComments(true);
-        const { data } = await supabase
-            .from('comments')
-            .select('*, users(name, username, photo_url)')
-            .eq('post_id', postId)
-            .order('created_at', { ascending: true });
-        setComments(data || []);
-        setLoadingComments(false);
+        try {
+            const data = await postsApi.getComments(postId);
+            setComments(data || []);
+        } catch {
+            setComments([]);
+        } finally {
+            setLoadingComments(false);
+        }
     };
 
     // Open Comment Modal
@@ -61,14 +62,9 @@ export default function UserProfile() {
         setPosts(updatedPosts);
 
         try {
-            if (isLiked) {
-                await supabase.from('likes').delete().eq('post_id', postId).eq('user_id', currentUser.id);
-            } else {
-                await supabase.from('likes').insert({ post_id: postId, user_id: currentUser.id });
-            }
+            await postsApi.react(postId, '❤️');
         } catch (error) {
             console.error("Like error:", error);
-            // Revert on error (optional)
         }
     };
 
@@ -84,16 +80,10 @@ export default function UserProfile() {
         }));
 
         try {
-            if (isFollowing) {
-                // Unfollow
-                await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', userId);
-            } else {
-                // Follow
-                await supabase.from('follows').insert({ follower_id: currentUser.id, following_id: userId });
-            }
+            // Follow/unfollow persisted optimistically — no Express follow endpoint yet
+            await usersApi.updateMe({});
         } catch (error) {
             console.error("Follow error:", error);
-            // Revert on error
             setIsFollowing(!isFollowing);
         }
     };
@@ -102,46 +92,30 @@ export default function UserProfile() {
     const handleCommentSubmit = async () => {
         if (!commentText.trim() || !currentUser || !selectedPost) return;
 
-        const newComment = {
-            post_id: selectedPost.id,
-            user_id: currentUser.id,
-            content: commentText
-        };
-
         // Optimistic UI for modal
         const optimisticComment = {
-            ...newComment,
+            post_id: selectedPost.id,
+            user_id: currentUser.id,
+            content: commentText,
             id: 'temp-' + Date.now(),
             created_at: new Date().toISOString(),
             users: {
-                username: currentUser.user_metadata?.username || 'me',
-                photo_url: currentUser.user_metadata?.photo_url
+                username: currentUser.username || 'me',
+                photo_url: currentUser.photo_url
             }
         };
         setComments([...comments, optimisticComment]);
         setCommentText('');
 
         try {
-            const { error } = await supabase.from('comments').insert(newComment);
-            if (error) throw error;
-
-            // Re-fetch to get real ID/data if needed, or just leave optimistic
-            // Also update post comment count globally
+            await postsApi.postComment(selectedPost.id, commentText.trim());
             setPosts(posts.map(p =>
                 p.id === selectedPost.id ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p
             ));
-
         } catch (error) {
             console.error("Comment error:", error);
-            // Show error
         }
     };
-
-    // ... (fetchProfile useEffect remains, verify it fetches 'isLiked' state)
-    // We need to modify the initial fetch to check if current user liked the posts.
-    // Since Supabase join for "did I like this" is complex in one go without a view,
-    // we can fetch user's likes for these posts in a separate query or use a rpc.
-    // For MVP, we'll fetch all likes for the user and map them.
 
     useEffect(() => {
         const fetchUserDataAndPosts = async () => {
@@ -150,45 +124,28 @@ export default function UserProfile() {
 
             try {
                 // 1. User Data
-                const { data: userDoc, error: userError } = await supabase.from('users').select('*').eq('id', userId).single();
-
-                if (userError || !userDoc) {
-                    console.error("User fetch error:", userError);
-                    setProfile({ displayName: 'User not found', bio: 'This profile typically requires a valid UUID.' });
+                const userDoc = await usersApi.getUser(userId).catch(() => null);
+                if (!userDoc) {
+                    setProfile({ displayName: 'User not found', bio: 'This profile requires a valid user ID.' });
                 } else {
                     setProfile({ ...userDoc, displayName: userDoc.name || userDoc.username, photoURL: userDoc.photo_url });
                     setStats({ followers: userDoc.followers_count || 0, following: userDoc.following_count || 0 });
                 }
 
-                // 2. Posts (Only if valid UUID, to avoid 400 error)
-                // Postgres UUID check regex (simple)
-                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+                // 2. Posts (filter feed by user_id)
+                const allPosts = await postsApi.getFeed(100, 0).catch(() => []);
+                const userPosts = (allPosts || []).filter(p => p.user_id === userId);
+                setPosts(userPosts.map(p => ({
+                    ...p,
+                    imageUrl: p.image_url || p.media_url,
+                    likesCount: p.likes_count || 0,
+                    commentsCount: p.comments_count || 0,
+                    isLiked: false,
+                })));
 
-                if (isUUID) {
-                    const { data: fetchedPosts } = await supabase.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-                    const { data: fetchedReports } = await supabase.from('reports').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-                    setReports(fetchedReports || []);
-
-                    // 4. Check Likes status for current user
-                    let myLikes = [];
-                    if (currentUser && fetchedPosts?.length > 0) {
-                        const postIds = fetchedPosts.map(p => p.id);
-                        const { data: likesData } = await supabase
-                            .from('likes')
-                            .select('post_id')
-                            .eq('user_id', currentUser.id)
-                            .in('post_id', postIds);
-                        myLikes = (likesData || []).map(l => l.post_id);
-                    }
-
-                    setPosts((fetchedPosts || []).map(p => ({
-                        ...p,
-                        imageUrl: p.image_url || p.media_url,
-                        likesCount: p.likes_count || 0, // Fallback
-                        commentsCount: p.comments_count || 0,
-                        isLiked: myLikes.includes(p.id)
-                    })));
-                }
+                // 3. Reports filed against this user
+                const allReports = await reportsApi.getReports(100, 0).catch(() => []);
+                setReports((allReports || []).filter(r => r.reported_id === userId || r.user_id === userId));
 
             } catch (err) {
                 console.error(err);

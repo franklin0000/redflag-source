@@ -19,6 +19,8 @@ const ALLOWED_TYPES = [
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'video/mp4', 'video/quicktime', 'video/webm',
+  // Audio
+  'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/wav',
 ];
 
 const storage = multer.diskStorage({
@@ -45,23 +47,51 @@ const BASE_URL = process.env.RENDER_EXTERNAL_URL ||
                  process.env.VITE_API_URL ||
                  'https://redflag-source.onrender.com';
 
+// Cloudinary upload (if credentials are set)
+async function uploadToCloudinary(filePath, folder) {
+  try {
+    const cloudinary = require('cloudinary').v2;
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+    const result = await cloudinary.uploader.upload(filePath, {
+      folder: `redflag/${folder || 'media'}`,
+      resource_type: 'auto',
+    });
+    return result.secure_url;
+  } catch (err) {
+    console.error('Cloudinary upload failed, falling back to local URL:', err.message);
+    return null;
+  }
+}
+
+async function resolveFileUrl(req, fieldName) {
+  if (!req.file) return;
+  const folder = req.body?.folder || 'media';
+  if (process.env.CLOUDINARY_CLOUD_NAME) {
+    const cdnUrl = await uploadToCloudinary(req.file.path, folder);
+    req.fileUrl = cdnUrl || `${BASE_URL}/api/files/${req.file.filename}`;
+    if (cdnUrl) fs.unlink(req.file.path, () => {});
+  } else {
+    req.fileUrl = `${BASE_URL}/api/files/${req.file.filename}`;
+  }
+}
+
 // Combined middleware: multer + attach public URL
 const uploadMiddleware = (req, res, next) => {
-  upload.single('file')(req, res, (err) => {
+  upload.single('file')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message });
-    if (req.file) {
-      req.fileUrl = `${BASE_URL}/api/files/${req.file.filename}`;
-    }
+    await resolveFileUrl(req);
     next();
   });
 };
 
 uploadMiddleware.single = (fieldName) => (req, res, next) => {
-  upload.single(fieldName)(req, res, (err) => {
+  upload.single(fieldName)(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message });
-    if (req.file) {
-      req.fileUrl = `${BASE_URL}/api/files/${req.file.filename}`;
-    }
+    await resolveFileUrl(req);
     next();
   });
 };

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDating } from '../context/DatingContext';
 import { useToast } from '../context/ToastContext';
 import { sendMessage, subscribeToMessages, uploadChatAttachment } from '../services/chatService';
-import { supabase } from '../services/supabase';
+import { userExtras, reportsApi, datingApi } from '../services/api';
 
 
 
@@ -226,13 +226,11 @@ export default function DatingChat() {
         if (!matchId || !user?.id) return;
 
         // Check muted
-        supabase.from('muted_chats').select('id').eq('user_id', user.id).eq('match_id', matchId).single()
-            .then(({ data }) => { if (data) setIsMuted(true); });
+        userExtras.getMuteStatus(matchId).then(d => { if (d?.muted) setIsMuted(true); }).catch(() => {});
 
         // Check blocked
         if (targetUserId) {
-            supabase.from('blocked_users').select('id').eq('blocker_id', user.id).eq('blocked_id', targetUserId).single()
-                .then(({ data }) => { if (data) setIsBlocked(true); });
+            userExtras.getBlocked().then(list => { if (list?.some(b => b.id === targetUserId)) setIsBlocked(true); }).catch(() => {});
         }
     }, [matchId, user?.id, targetUserId]);
 
@@ -255,11 +253,11 @@ export default function DatingChat() {
                 return;
             }
             if (isMuted) {
-                await supabase.from('muted_chats').delete().eq('user_id', user.id).eq('match_id', matchId);
+                await userExtras.unmuteChat(matchId);
                 setIsMuted(false);
                 toast.success('Chat unmuted 🔔');
             } else {
-                await supabase.from('muted_chats').insert({ user_id: user.id, match_id: matchId });
+                await userExtras.muteChat(matchId);
                 setIsMuted(true);
                 toast.success('Chat muted 🔕');
             }
@@ -292,11 +290,11 @@ export default function DatingChat() {
                 return;
             }
             if (isBlocked) {
-                await supabase.from('blocked_users').delete().eq('blocker_id', user.id).eq('blocked_id', targetUserId);
+                await userExtras.unblockUser(targetUserId);
                 setIsBlocked(false);
                 toast.success('User unblocked');
             } else {
-                await supabase.from('blocked_users').insert({ blocker_id: user.id, blocked_id: targetUserId });
+                await userExtras.blockUser(targetUserId);
                 setIsBlocked(true);
                 toast.success('User blocked');
                 navigate('/dating/matches');
@@ -329,14 +327,12 @@ export default function DatingChat() {
                 setShowReportModal(false);
                 return;
             }
-            const { error } = await supabase.from('reports').insert({
-                reporter_id: user.id,
+            await reportsApi.createReport({
                 reported_id: targetUserId,
                 reason: reportReason,
                 description: reportDescription || null,
-                status: 'pending'
-            }).select();
-            if (error) throw error;
+                status: 'pending',
+            });
             toast.success('Report submitted. Our team will review it.');
             setShowReportModal(false);
         } catch (err) {
@@ -350,8 +346,7 @@ export default function DatingChat() {
         if (!window.confirm('Clear all messages? This cannot be undone.')) return;
         try {
             if (isValidUUID(user?.id) && matchId) {
-                const { error } = await supabase.from('messages').delete().eq('room_id', matchId);
-                if (error) throw error;
+                await datingApi.deleteMessages(matchId).catch(() => {});
             }
             setMessages([]);
             toast.success('Chat cleared');
@@ -408,13 +403,6 @@ export default function DatingChat() {
 
         try {
             await sendMessage(matchId, text);
-            // Non-blocking update to matches for last_message preview
-            supabase.from('matches')
-                .update({ last_message: text, last_message_time: new Date().toISOString() })
-                .eq('id', matchId)
-                .then(({ error }) => {
-                    if (error) console.warn("matches update skipped:", error.message);
-                });
         } catch (error) {
             console.error("Error sending message:", error);
             toast.error("Failed to send");

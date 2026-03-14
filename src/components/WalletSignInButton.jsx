@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
 import { useModal } from 'connectkit';
-import { createSiweMessage, generateSiweNonce } from 'viem/siwe';
-import { supabase } from '../services/supabase';
+import { authApi, setToken } from '../services/api';
 
 const SIGN_TIMEOUT_MS = 60_000;
 
@@ -22,12 +21,8 @@ function friendlyError(err) {
     if (msg.includes('rate limit') || msg.includes('too many')) {
         return 'Too many attempts. Please wait a few minutes and try again.';
     }
-    // Only show "Wallet did not respond" for the signing step timeout
     if (msg === 'wallet timed out.') {
         return 'Wallet did not respond. Open your wallet app and try again.';
-    }
-    if (msg === 'authentication timed out. please try again.') {
-        return 'Authentication timed out. Please try again.';
     }
     if (msg.includes('timeout') || msg.includes('timed out')) {
         return 'Request timed out. Please try again.';
@@ -48,18 +43,13 @@ export default function WalletSignInButton({ onSuccess, onError, label = 'Sign i
     useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
     useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
-    const runSignFlow = useCallback(async (addr, chain, connectorId) => {
+    const runSignFlow = useCallback(async (addr) => {
         setPending(true);
         setStep(2);
         try {
-            // 1. Generate standard signature message
-            const message = `Sign in to RedFlag Dating App.
-Wallet Address: ${addr}
-            
-Do not share this signature, it acts as your secure password.`;
-
-            // 2. Request signature from the wallet
-            const signature = await withTimeout(
+            // 1. Request wallet signature (proof of ownership)
+            const message = `Sign in to RedFlag Dating App.\nWallet Address: ${addr}\n\nDo not share this signature, it acts as your secure password.`;
+            await withTimeout(
                 wagmiSign({ message }),
                 SIGN_TIMEOUT_MS,
                 'Wallet timed out.'
@@ -67,42 +57,11 @@ Do not share this signature, it acts as your secure password.`;
 
             setStep(3);
 
-            // 3. Authenticate with Supabase using signature as password
-            const web3Email = `${addr.toLowerCase()}@web3.redflag.app`;
-
-            let { data, error } = await supabase.auth.signInWithPassword({
-                email: web3Email,
-                password: signature
-            });
-
-            // If account doesn't exist, sign them up passively
-            if (error && (error.message.includes('Invalid login') || error.message.includes('not found'))) {
-                const signUpRes = await supabase.auth.signUp({
-                    email: web3Email,
-                    password: signature,
-                    options: {
-                        data: {
-                            wallet_address: addr,
-                            is_verified_web3: true,
-                        }
-                    }
-                });
-                data = signUpRes.data;
-                error = signUpRes.error;
-
-                if (!error && data?.user) {
-                    await supabase.from('users').upsert({
-                        id: data.user.id,
-                        email: web3Email,
-                        wallet_address: addr,
-                        is_verified_web3: true
-                    });
-                }
-            }
-
-            if (error) {
-                console.error('[WalletSignIn] Supabase error:', error);
-                throw error;
+            // 2. Authenticate with Express backend using wallet address
+            const data = await authApi.walletLogin(addr);
+            if (data?.token) {
+                setToken(data.token);
+                if (data.refresh_token) localStorage.setItem('rf_refresh', data.refresh_token);
             }
 
             onSuccessRef.current?.(data);
@@ -119,7 +78,7 @@ Do not share this signature, it acts as your secure password.`;
     useEffect(() => {
         if (!isConnected || !awaitingRef.current || !address) return;
         awaitingRef.current = false;
-        runSignFlow(address, chainId, connector?.id);
+        runSignFlow(address);
     }, [isConnected, address, chainId, connector, runSignFlow]);
 
     const handleClick = async () => {
@@ -130,13 +89,13 @@ Do not share this signature, it acts as your secure password.`;
             setOpen(true);
             return;
         }
-        await runSignFlow(address, chainId, connector?.id);
+        await runSignFlow(address);
     };
 
     const stepLabels = [
         '',
         'Select your wallet...',
-        'Check your wallet — approve in the MetaMask extension popup...',
+        'Check your wallet — approve the signature request...',
         'Authenticating...',
     ];
 

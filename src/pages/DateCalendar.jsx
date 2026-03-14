@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../services/supabase';
+import { datingApi } from '../services/api';
 
 export default function DateCalendar() {
     const navigate = useNavigate();
@@ -14,11 +14,8 @@ export default function DateCalendar() {
         if (!user) return;
         const fetchDates = async () => {
             try {
-                // Fetch matches from Supabase
-                const { data: matches } = await supabase
-                    .from('matches')
-                    .select('id, last_message, last_message_time, updated_at')
-                    .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+                // Fetch matches from Express API
+                const matches = await datingApi.getMatches();
 
                 const parsedEvents = [];
                 for (const m of (matches || [])) {

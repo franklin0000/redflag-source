@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../services/supabase';
+import { userExtras, authExtras, usersApi, getToken } from '../services/api';
 import { secureRemove } from '../services/secureStorage';
 
 // ── Reusable Modal ──────────────────────────────────────────────────────────
@@ -60,48 +60,33 @@ export default function Settings() {
     const [twoFAError, setTwoFAError] = useState('');
     const [twoFALoading, setTwoFALoading] = useState(false);
 
-    // ── Load settings from Supabase ─────────────────────────────────────────
+    // ── Load settings from Express API ──────────────────────────────────────
     useEffect(() => {
         if (!user?.id) return;
 
         const fetchSettings = async () => {
-            const { data } = await supabase
-                .from('users')
-                .select('settings')
-                .eq('id', user.id)
-                .single();
-
-            if (data?.settings) {
-                setProfileVisible(data.settings.profileVisible ?? true);
-                setEmailNotifs(data.settings.emailNotifications ?? true);
-                setPushNotifs(data.settings.pushNotifications ?? true);
-                setSmsNotifs(data.settings.smsNotifications ?? false);
-                setSafetyAlerts(data.settings.safetyAlerts ?? true);
-                setBlockedList(data.settings.blockedUsers ?? []);
-            }
-        };
-
-        // Check enrolled TOTP factors
-        const checkMFA = async () => {
-            const { data } = await supabase.auth.mfa.listFactors();
-            const enrolled = data?.totp?.find(f => f.status === 'verified');
-            if (enrolled) {
-                setTotpFactorId(enrolled.id);
-                setTwoFA(true);
+            try {
+                const data = await userExtras.getSettings();
+                if (data) {
+                    setProfileVisible(data.profileVisible ?? true);
+                    setEmailNotifs(data.emailNotifications ?? true);
+                    setPushNotifs(data.pushNotifications ?? true);
+                    setSmsNotifs(data.smsNotifications ?? false);
+                    setSafetyAlerts(data.safetyAlerts ?? true);
+                }
+            } catch (err) {
+                console.warn('Failed to load settings:', err);
             }
         };
 
         fetchSettings();
-        checkMFA();
     }, [user?.id]);
 
     // ── Persist a single setting ────────────────────────────────────────────
     const updateSetting = async (key, value) => {
         if (!user?.id) return;
         try {
-            const { data } = await supabase.from('users').select('settings').eq('id', user.id).single();
-            const merged = { ...(data?.settings || {}), [key]: value };
-            await supabase.from('users').update({ settings: merged }).eq('id', user.id);
+            await userExtras.updateSettings({ [key]: value });
         } catch (err) {
             console.error(`Error updating ${key}:`, err);
         }
@@ -126,90 +111,22 @@ export default function Settings() {
         updateSetting('pushNotifications', val);
     };
 
-    // ── Two-Factor Authentication ───────────────────────────────────────────
-    const handleTwoFAChange = async (val) => {
-        setTwoFAError('');
-        setTotpCode('');
-        if (val) {
-            // Enable — start TOTP enrollment
-            setTwoFAStep('enrolling');
-            setTwoFAModal(true);
-            setTwoFALoading(true);
-            try {
-                const { data, error } = await supabase.auth.mfa.enroll({
-                    factorType: 'totp',
-                    issuer: 'RedFlag',
-                    friendlyName: 'RedFlag Authenticator',
-                });
-                if (error) throw error;
-                setTotpQR(data.totp.qr_code);
-                setTotpSecret(data.totp.secret);
-                setTotpFactorId(data.id);
-                setTwoFAStep('scan');
-            } catch (e) {
-                setTwoFAError(e.message || 'Failed to start enrollment.');
-                setTwoFAStep('error');
-            } finally {
-                setTwoFALoading(false);
-            }
-        } else {
-            // Disable — confirm before unenrolling
-            setTwoFAStep('unenroll');
-            setTwoFAModal(true);
-        }
+    // ── Two-Factor Authentication (coming soon) ────────────────────────────
+    const handleTwoFAChange = (val) => {
+        // 2FA via TOTP is not yet implemented — show placeholder
+        setTwoFA(val);
+        updateSetting('twoFactorEnabled', val);
     };
 
-    const handleTotpVerify = async () => {
-        if (totpCode.length !== 6) { setTwoFAError('Please enter a 6-digit code.'); return; }
-        setTwoFALoading(true);
-        setTwoFAError('');
-        try {
-            const { data: challengeData, error: challengeErr } = await supabase.auth.mfa.challenge({ factorId: totpFactorId });
-            if (challengeErr) throw challengeErr;
-
-            const { error: verifyErr } = await supabase.auth.mfa.verify({
-                factorId: totpFactorId,
-                challengeId: challengeData.id,
-                code: totpCode,
-            });
-            if (verifyErr) throw verifyErr;
-
-            setTwoFA(true);
-            updateSetting('twoFactorEnabled', true);
-            setTwoFAStep('success');
-        } catch (e) {
-            setTwoFAError(e.message || 'Invalid code. Try again.');
-        } finally {
-            setTwoFALoading(false);
-        }
-    };
-
+    const handleTotpVerify = () => {};
     const handleTotpUnenroll = async () => {
-        setTwoFALoading(true);
-        setTwoFAError('');
-        try {
-            if (totpFactorId) {
-                const { error } = await supabase.auth.mfa.unenroll({ factorId: totpFactorId });
-                if (error) throw error;
-            }
-            setTwoFA(false);
-            setTotpFactorId('');
-            updateSetting('twoFactorEnabled', false);
-            setTwoFAModal(false);
-            setTwoFAStep('idle');
-        } catch (e) {
-            setTwoFAError(e.message || 'Failed to disable 2FA.');
-        } finally {
-            setTwoFALoading(false);
-        }
+        setTwoFA(false);
+        updateSetting('twoFactorEnabled', false);
+        setTwoFAModal(false);
+        setTwoFAStep('idle');
     };
 
-    const closeTwoFAModal = async () => {
-        // Clean up unverified factor if enrollment was started but not completed
-        if ((twoFAStep === 'scan' || twoFAStep === 'enrolling') && totpFactorId) {
-            try { await supabase.auth.mfa.unenroll({ factorId: totpFactorId }); } catch { /* ignore cleanup errors */ }
-            setTotpFactorId('');
-        }
+    const closeTwoFAModal = () => {
         setTwoFAModal(false);
         setTwoFAStep('idle');
         setTotpCode('');
@@ -217,21 +134,14 @@ export default function Settings() {
     };
 
     // ── Active Sessions ─────────────────────────────────────────────────────
-    const handleOpenSessions = async () => {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session) {
-            const s = data.session;
+    const handleOpenSessions = () => {
+        const token = getToken();
+        if (token) {
             setSessionInfo({
-                email: s.user?.email || user?.email || 'Unknown',
-                lastSignIn: s.user?.last_sign_in_at
-                    ? new Date(s.user.last_sign_in_at).toLocaleString()
-                    : 'Unknown',
-                expiresAt: s.expires_at
-                    ? new Date(s.expires_at * 1000).toLocaleString()
-                    : 'Unknown',
-                tokenPreview: s.access_token
-                    ? s.access_token.slice(0, 24) + '...'
-                    : 'N/A',
+                email: user?.email || 'Unknown',
+                lastSignIn: 'Current session',
+                expiresAt: 'On logout',
+                tokenPreview: token.slice(0, 24) + '...',
             });
         } else {
             setSessionInfo(null);
@@ -240,8 +150,7 @@ export default function Settings() {
     };
 
     const handleSignOutAllDevices = async () => {
-        if (confirm('This will sign you out from ALL devices. Continue?')) {
-            await supabase.auth.signOut({ scope: 'global' });
+        if (confirm('This will sign you out. Continue?')) {
             await logout();
             navigate('/login');
         }
@@ -250,11 +159,8 @@ export default function Settings() {
     // ── Blocked Users ───────────────────────────────────────────────────────
     const handleOpenBlocked = async () => {
         try {
-            const { data } = await supabase
-                .from('blocked_users')
-                .select(`*, blocked:users!blocked_id(id, name, photo_url, username)`)
-                .eq('blocker_id', user?.id);
-            setBlockedList((data || []).map(r => r.blocked).filter(Boolean));
+            const data = await userExtras.getBlocked();
+            setBlockedList(data || []);
         } catch (err) {
             console.warn('Failed to load blocked users:', err);
             setBlockedList([]);
@@ -264,10 +170,7 @@ export default function Settings() {
 
     const handleUnblock = async (blockedUser) => {
         try {
-            await supabase.from('blocked_users')
-                .delete()
-                .eq('blocker_id', user?.id)
-                .eq('blocked_id', blockedUser.id);
+            await userExtras.unblockUser(blockedUser.id);
             setBlockedList(prev => prev.filter(u => u.id !== blockedUser.id));
         } catch (err) {
             console.error('Error unblocking:', err);
@@ -279,10 +182,7 @@ export default function Settings() {
         if (!user?.email) return;
         if (confirm(`Send password reset email to ${user.email}?`)) {
             try {
-                const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-                    redirectTo: window.location.origin + '/#/reset-password',
-                });
-                if (error) throw error;
+                await authExtras.forgotPassword(user.email);
                 alert('Password reset email sent! Check your inbox.');
             } catch (error) {
                 console.error('Error sending reset email:', error);
@@ -327,9 +227,7 @@ export default function Settings() {
         if (confirmDelete === 'DELETE') {
             try {
                 setLoading(true);
-                await supabase.from('dating_profiles').delete().eq('user_id', user.id);
-                await supabase.from('searches').delete().eq('user_id', user.id);
-                await supabase.from('users').delete().eq('id', user.id);
+                await userExtras.deleteAccount();
                 alert('Your account data has been deleted. You will now be signed out.');
                 await logout();
                 navigate('/login');

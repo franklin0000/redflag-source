@@ -3,8 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { supabase } from '../services/supabase';
-import { uploadProfileMedia } from '../services/storageService';
+import { datingApi, usersApi, uploadFile } from '../services/api';
 import { uploadToIPFS } from '../services/ipfsService';
 import { ConnectKitButton } from 'connectkit';
 import { useAccount } from 'wagmi';
@@ -36,50 +35,36 @@ export default function Management() {
     const [interests, setInterests] = useState([]);
     const [lookingFor, setLookingFor] = useState({ type: '', ageRange: '18-35', dealbreakers: '' });
 
-    // Fetch Profile Data from Supabase
+    // Fetch Profile Data from Express API
     useEffect(() => {
         if (!user?.id) return;
 
         const fetchProfile = async () => {
-            const { data } = await supabase
-                .from('dating_profiles')
-                .select('*')
-                .eq('user_id', user.id)
-                .single();
-
-            if (data) {
-                if (data.media) {
-                    setPhotos(data.media.photos || []);
-                    setVideos(data.media.videos || []);
-                    setVoiceNotes(data.media.voice || []);
+            try {
+                const data = await datingApi.getMyProfile();
+                if (data) {
+                    if (data.media) {
+                        setPhotos(data.media.photos || []);
+                        setVideos(data.media.videos || []);
+                        setVoiceNotes(data.media.voice || []);
+                    }
+                    setAboutMe({
+                        bio: data.bio || '',
+                        age: data.age?.toString() || '',
+                        location: data.location || '',
+                        lat: data.lat || null,
+                        lng: data.lng || null,
+                        occupation: data.profile_data?.occupation || '',
+                        height: data.height || '',
+                        zodiac: data.profile_data?.zodiac || '',
+                    });
+                    if (data.profile_data?.lookingFor) {
+                        setLookingFor(data.profile_data.lookingFor);
+                    }
+                    if (data.interests) setInterests(data.interests);
                 }
-                setAboutMe({
-                    bio: data.bio || '',
-                    age: data.age?.toString() || '',
-                    location: data.location || '',
-                    lat: data.lat || null,
-                    lng: data.lng || null,
-                    occupation: data.occupation || '', // occupation not in schema explicitly, store in bio/aboutMe metadata? 
-                    // Wait, schema for dating_profiles: bio, age, height, location, interests, photos, media, safety_score.
-                    // 'occupation', 'zodiac' are missing. 
-                    // I should store 'aboutMe' object in a JSON column or add columns.
-                    // For now, I'll assume I store them in 'bio' or add 'about_me' jsonb column?
-                    // actually I can store everything in 'media' or 'dating_profiles' if I add columns.
-                    // Let's add 'about' jsonb column to dating_profiles for flexible fields.
-                    // Or reuse 'bio' as text and keep others separate.
-                    // I'll assume 'about' jsonb existence or use what's there.
-                    // Actually, let's just use what we have and maybe store extra in 'media' for now to avoid migration headache or add 'profile_data' jsonb.
-                    // I will ADD 'profile_data' jsonb to schema in next step if needed, or just use `media` for simplicity? No `media` is for media.
-                    // I'll update schema to add `profile_data` jsonb.
-                    // For SAFETY, currently I will just load what maps to schema columns:
-                    height: data.height || '',
-                });
-                // mapping other fields from `data.profile_data` if exists.
-                if (data.profile_data) {
-                    setAboutMe(prev => ({ ...prev, ...data.profile_data, ...data })); // merge
-                    setLookingFor(data.profile_data.lookingFor || {});
-                }
-                if (data.interests) setInterests(data.interests);
+            } catch (err) {
+                console.warn('Failed to load profile:', err);
             }
         };
         fetchProfile();
@@ -120,29 +105,22 @@ export default function Management() {
     const photoInputRef = useRef(null);
     const videoInputRef = useRef(null);
 
-    // Persist media to Supabase
+    // Persist media to Express API
     const updateMediaInDB = async (type, newMedia) => {
         if (!user?.id) return;
         try {
-            // Get current media
-            const { data } = await supabase.from('dating_profiles').select('media').eq('user_id', user.id).single();
-            const currentMedia = data?.media || {};
+            const currentProfile = await datingApi.getMyProfile().catch(() => ({}));
+            const currentMedia = currentProfile?.media || {};
             const updatedMedia = { ...currentMedia, [type]: newMedia };
 
-            // Upsert profile
-            const { error } = await supabase.from('dating_profiles').upsert({
-                user_id: user.id,
+            await datingApi.saveProfile({
                 media: updatedMedia,
-                // also update photos array for legacy/query support
-                photos: type === 'photos' ? newMedia.map(p => p.data) : (data?.photos || [])
+                photos: type === 'photos' ? newMedia.map(p => p.data) : (currentProfile?.photos || [])
             });
-            if (error) throw error;
 
             if (type === 'photos' && newMedia.length > 0) {
-                // Update main user photo_url if first photo
-                await supabase.from('users').update({ photo_url: newMedia[0].data }).eq('id', user.id);
+                await usersApi.updateMe({ photo_url: newMedia[0].data });
             }
-
         } catch (error) {
             console.error(`Error updating ${type}:`, error);
         }
@@ -152,31 +130,24 @@ export default function Management() {
     const persistProfileData = async (key, data) => {
         if (!user?.id) return;
         try {
-            // map key to schema columns or profile_data jsonb
             const updates = {};
             if (key === 'aboutMe') {
                 updates.bio = data.bio;
                 updates.age = parseInt(data.age) || null;
                 updates.height = data.height;
                 updates.location = data.location;
-                if (data.lat && data.lng) {
-                    updates.lat = data.lat;
-                    updates.lng = data.lng;
-                }
-                // others to profile_data
-                const { data: current } = await supabase.from('dating_profiles').select('profile_data').eq('user_id', user.id).single();
-                updates.profile_data = { ...(current?.profile_data || {}), ...data };
+                if (data.lat && data.lng) { updates.lat = data.lat; updates.lng = data.lng; }
+                const currentProfile = await datingApi.getMyProfile().catch(() => ({}));
+                updates.profile_data = { ...(currentProfile?.profile_data || {}), ...data };
             } else if (key === 'interests') {
                 updates.interests = data;
             } else if (key === 'lookingFor') {
-                const { data: current } = await supabase.from('dating_profiles').select('profile_data').eq('user_id', user.id).single();
-                updates.profile_data = { ...(current?.profile_data || {}), lookingFor: data };
+                const currentProfile = await datingApi.getMyProfile().catch(() => ({}));
+                updates.profile_data = { ...(currentProfile?.profile_data || {}), lookingFor: data };
+            } else if (key === 'web3') {
+                updates.profile_data = data;
             }
-
-            await supabase.from('dating_profiles').upsert({
-                user_id: user.id,
-                ...updates
-            });
+            await datingApi.saveProfile(updates);
         } catch (error) {
             console.error(`Error saving ${key}:`, error);
         }
@@ -207,8 +178,8 @@ export default function Management() {
                 let downloadURL;
                 let ipfsHash = null;
 
-                // 1. Upload to Supabase (Web2 Storage)
-                downloadURL = await uploadProfileMedia(file, user.id, 'photos');
+                // 1. Upload to Express backend
+                downloadURL = await uploadFile(file, 'profile');
 
                 // 2. Upload to IPFS (IPFS Storage)
                 const ipfsResult = await uploadToIPFS(file);
@@ -260,7 +231,7 @@ export default function Management() {
         toast.info('Uploading video... please wait', { autoClose: 3000 });
 
         try {
-            const downloadURL = await uploadProfileMedia(file, user.id, 'videos');
+            const downloadURL = await uploadFile(file, 'profile');
             const newVideo = {
                 id: Date.now(),
                 data: downloadURL,
@@ -306,7 +277,7 @@ export default function Management() {
                 toast.info('Saving voice note...', { autoClose: 2000 });
 
                 try {
-                    const downloadURL = await uploadProfileMedia(blob, user.id, 'voice');
+                    const downloadURL = await uploadFile(blob, 'profile');
                     const newNote = {
                         id: Date.now(),
                         data: downloadURL,

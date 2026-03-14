@@ -7,7 +7,7 @@ import {
     getEmergencyNumber,
     isGeolocationSupported,
 } from '../services/locationService';
-import { supabase } from '../services/supabase';
+import { contactsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 export default function DateCheckIn() {
@@ -33,10 +33,11 @@ export default function DateCheckIn() {
     });
     const [contactsLoaded, setContactsLoaded] = useState(false);
 
-    // Load contacts from Supabase on mount
+    // Load contacts from API on mount
     useEffect(() => {
-        supabase.from('trusted_contacts').select('*').eq('user_id', user?.id || '')
-            .then(({ data }) => {
+        if (!user?.id) { setContactsLoaded(true); return; }
+        contactsApi.getAll()
+            .then((data) => {
                 if (data && data.length > 0) {
                     setContacts(data);
                     localStorage.setItem('rf_saved_contacts', JSON.stringify(data));

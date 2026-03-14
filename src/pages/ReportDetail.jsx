@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { supabase } from '../services/supabase';
+import { reportsApi } from '../services/api';
 import { secureGet } from '../services/secureStorage';
 
 const getTimeAgo = (timestamp) => {
@@ -54,20 +54,14 @@ export default function ReportDetail() {
                     }
                 }
 
-                // 2. Fetch from Supabase
-                const { data, error } = await supabase
-                    .from('reports')
-                    .select(`*, user:users!user_id(name, is_verified, photo_url)`)
-                    .eq('id', id)
-                    .single();
-
-                if (error) throw error;
+                // 2. Fetch from Express API
+                const data = await reportsApi.getReport(id);
 
                 if (data) {
                     setReport({
                         ...data,
                         initials: (data.user?.name || 'AN').substring(0, 2).toUpperCase(),
-                        flags: [data.type].filter(Boolean),
+                        flags: [data.type || data.category].filter(Boolean),
                         riskLevel: 'medium',
                         reportCount: 1,
                         user: data.user?.name || 'Anonymous',
@@ -99,14 +93,10 @@ export default function ReportDetail() {
         // Supabase Realtime Subscription for comments table
         // We filter by report_id. Note: RLS must allow this.
 
-        // Fetch comments from Supabase
+        // Fetch comments from Express API
         const fetchComments = async () => {
             try {
-                const { data } = await supabase
-                    .from('comments')
-                    .select(`*, user:users!user_id(name, photo_url)`)
-                    .eq('report_id', id)
-                    .order('created_at', { ascending: true });
+                const data = await reportsApi.getComments(id);
                 if (data) setComments(data.map(c => ({ ...c, user: c.user || { name: 'Anonymous' } })));
             } catch (err) {
                 console.warn('Failed to load comments:', err);
@@ -154,12 +144,7 @@ export default function ReportDetail() {
         }
 
         try {
-            const { data: comment, error } = await supabase
-                .from('comments')
-                .insert({ report_id: id, user_id: user?.id, content: newComment.trim() })
-                .select(`*, user:users!user_id(name, photo_url)`)
-                .single();
-            if (error) throw error;
+            const comment = await reportsApi.postComment(id, newComment.trim());
             setComments(prev => [...prev, { ...comment, user: comment.user || { name: user?.name || 'Anonymous' } }]);
             setNewComment('');
             toast.success('Comment posted');
@@ -176,7 +161,7 @@ export default function ReportDetail() {
 
         try {
             const newUpvotes = (comments.find(c => c.id === commentId)?.upvotes || 0) + 1;
-            await supabase.from('comments').update({ upvotes: newUpvotes }).eq('id', commentId);
+            await reportsApi.upvoteComment(id, commentId);
             setComments(prev => prev.map(c =>
                 c.id === commentId ? { ...c, upvotes: newUpvotes } : c
             ));

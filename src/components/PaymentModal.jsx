@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { supabase } from '../services/supabase';
+import { usersApi } from '../services/api';
 import { ConnectKitButton } from 'connectkit';
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
 import { parseEther } from 'viem';
@@ -60,13 +60,8 @@ export default function PaymentModal({ featureName, onClose }) {
         if (!isConfirmed || !txHash) return;
         setTxStatus('confirmed');
 
-        supabase
-            .from('users')
-            .update({ is_paid: true, is_verified_web3: true })
-            .eq('id', user.id)
-            .then(({ error }) => {
-                if (error) console.error('Supabase update failed:', error);
-            });
+        usersApi.updateMe({ is_paid: true, is_verified_web3: true })
+            .catch(err => console.error('Update failed:', err));
 
         toast.success("Donation confirmed on Polygon! Thank you 💖");
         setTimeout(onClose, 2000);

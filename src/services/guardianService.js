@@ -1,8 +1,8 @@
+// guardianService.js — Express API + Socket.io (no Supabase)
+import { guardianApi } from './api';
+import { getSocket, connectSocket } from './socketService';
 
-
-import { supabase } from '../lib/supabase';
-
-// ── Risk patterns ─────────────────────────────────────────────────────────────
+// ── Risk patterns (local analysis, no network needed) ─────────
 const RISK_PATTERNS = {
     financial: [
         /send money/i, /bank account/i, /wire transfer/i, /crypto/i, /invest/i,
@@ -40,140 +40,89 @@ export async function logRiskAnalysis(userId, matchId, analysis) {
     }
 }
 
-// ── Session management (Supabase PostgreSQL + Realtime) ─────────────────────
+// ── Session management (Express API) ─────────────────────────
 
 export async function createGuardianSession(userId, daterName, checkInMinutes = 30, dateLocation = '') {
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 12); // Hard 12-hour limit on sessions
-
-    // Generate a unique token for the share link
-    const sessionToken = crypto.randomUUID();
-
-    // Find and end existing active session for this user
-    await supabase.from('guardian_sessions').update({ is_active: false }).eq('dater_id', userId).eq('is_active', true);
-
-    const { data, error } = await supabase.from('guardian_sessions').insert({
-        dater_id: userId,
-        session_token: sessionToken,
+    const data = await guardianApi.create({
         dater_name: daterName,
         check_in_minutes: checkInMinutes,
         date_location: dateLocation,
-        is_active: true,
-        is_sos: false,
-        sentiment: 'normal',
-        expires_at: expiresAt.toISOString(),
-    }).select().single();
-
-    if (error) throw error;
-    // Map db data to what the frontend expects
+    });
     return { session: data };
 }
 
 export async function updateGuardianLocation(sessionId, lat, lng) {
     try {
-        await supabase.from('guardian_sessions').update({
-            location: { lat, lng, updatedAt: new Date().toISOString() }
-        }).eq('id', sessionId);
+        await guardianApi.updateLocation(sessionId, lat, lng);
+        // Also emit via socket for real-time watchers
+        const s = getSocket() || connectSocket();
+        s?.emit('location:update', { sessionId, lat, lng });
     } catch (err) {
         console.warn('[Guardian] Failed to update location:', err.message);
     }
 }
 
 export async function checkInSafe(sessionId) {
-    const { data, error } = await supabase.from('guardian_sessions').update({
-        last_checkin_at: new Date().toISOString()
-    }).eq('id', sessionId).select().single();
-
-    if (error) throw error;
+    const data = await guardianApi.checkIn(sessionId);
     return { session: data };
 }
 
 export async function markTense(sessionId) {
-    await supabase.from('guardian_sessions').update({
-        sentiment: 'tense'
-    }).eq('id', sessionId);
+    // Mark via check-in (no dedicated tense endpoint; guardian can see last_checkin)
     console.info('[Guardian] markTense', sessionId);
+    return guardianApi.checkIn(sessionId);
 }
 
 export async function triggerSOS(sessionId, location = null) {
-    const updates = { is_sos: true, sentiment: 'panic' };
-    if (location) {
-        updates.location = { ...location, updatedAt: new Date().toISOString() };
-    }
-    const { data, error } = await supabase.from('guardian_sessions').update(updates).eq('id', sessionId).select().single();
-    if (error) throw error;
+    const data = await guardianApi.triggerSOS(sessionId, location);
     return { session: data };
 }
 
 export async function cancelSOS(sessionId) {
-    const { data, error } = await supabase.from('guardian_sessions').update({
-        is_sos: false,
-        sentiment: 'normal',
-        last_checkin_at: new Date().toISOString()
-    }).eq('id', sessionId).select().single();
-    if (error) throw error;
+    const data = await guardianApi.cancelSOS(sessionId);
     return { session: data };
 }
 
 export async function endGuardianSession(sessionId) {
-    const { data, error } = await supabase.from('guardian_sessions').update({
-        is_active: false,
-        expires_at: new Date().toISOString()
-    }).eq('id', sessionId).select().single();
-    if (error) throw error;
+    const data = await guardianApi.end(sessionId);
     return { session: data };
 }
 
 export async function getSessionByToken(token) {
-    // API endpoint previously took the session link token or ID. 
-    // We'll search by session_token first, then fallback to id.
-    let { data, error } = await supabase.from('guardian_sessions').select('*').eq('session_token', token).single();
-    if (error || !data) {
-        const fallback = await supabase.from('guardian_sessions').select('*').eq('id', token).single();
-        data = fallback.data;
-        error = fallback.error;
-    }
-    if (error || !data) throw new Error('Session not found');
+    const data = await guardianApi.viewByToken(token);
+    if (!data) throw new Error('Session not found');
     return { session: data };
 }
 
 export async function getMyActiveSession() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) return { session: null };
-
-    const { data, error } = await supabase.from('guardian_sessions')
-        .select('*')
-        .eq('dater_id', session.user.id)
-        .eq('is_active', true)
-        .single();
-
-    if (error) return { session: null };
-    return { session: data };
+    try {
+        const data = await guardianApi.getMine();
+        // Find the first active session
+        const active = Array.isArray(data)
+            ? data.find(s => s.is_active)
+            : (data?.is_active ? data : null);
+        return { session: active || null };
+    } catch {
+        return { session: null };
+    }
 }
 
-/**
- * Subscribe to real-time guardian session updates via Supabase Channels.
- */
 export function subscribeToSession(sessionToken, onUpdate) {
-    // Let's deduce if token is session_token or ID
-    // Fast path: subscribe changes where id=sessionToken or just refresh via DB
-    const channel = supabase.channel(`guardian:${sessionToken}`)
-        .on(
-            'postgres_changes',
-            { event: 'UPDATE', schema: 'public', table: 'guardian_sessions' },
-            (payload) => {
-                // we have to check if payload matches id or session_token
-                if (payload.new.id === sessionToken || payload.new.session_token === sessionToken) {
-                    onUpdate({ session: payload.new });
-                }
-            }
-        )
-        .subscribe();
+    const s = getSocket() || connectSocket();
+    s?.emit('join_guardian', sessionToken);
+
+    const handler = (payload) => {
+        if (payload.session_token === sessionToken || payload.id === sessionToken) {
+            onUpdate({ session: payload });
+        }
+    };
+
+    s?.on('guardian:update', handler);
 
     return {
         unsubscribe: () => {
-            supabase.removeChannel(channel);
-        }
+            s?.off('guardian:update', handler);
+        },
     };
 }
 

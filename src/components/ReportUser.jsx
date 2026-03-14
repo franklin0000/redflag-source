@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { supabase } from '../services/supabase';
-import { uploadToIPFS, createMetadataJSON } from '../services/ipfsService';
+import { reportsApi, uploadFile } from '../services/api';
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
 import { toHex } from 'viem';
 
@@ -50,12 +49,11 @@ export default function ReportUser({ targetUser, onClose }) {
         if (txHash) setStep('confirming');
     }, [txHash]);
 
-    // TX confirmed: save to Supabase with real txHash
+    // TX confirmed: save to DB with real txHash
     useEffect(() => {
         if (!isConfirmed || !pendingRef.current) return;
         const { evidenceUrl, metadataHash } = pendingRef.current;
-        supabase.from('reports').insert({
-            reporter_id: user.id,
+        reportsApi.createReport({
             reported_id: targetUser.id,
             reason,
             description,
@@ -63,9 +61,7 @@ export default function ReportUser({ targetUser, onClose }) {
             ipfs_hash: metadataHash,
             tx_hash: txHash,
             status: 'confirmed',
-        }).then(({ error }) => {
-            if (error) console.error('Supabase save failed:', error);
-        });
+        }).catch(err => console.error('Report save failed:', err));
         setStep('done');
         toast.success("Red Flag anchored on Polygon! 🛡️");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,8 +72,7 @@ export default function ReportUser({ targetUser, onClose }) {
         if (!sendError) return;
         if (pendingRef.current) {
             const { evidenceUrl, metadataHash } = pendingRef.current;
-            supabase.from('reports').insert({
-                reporter_id: user.id,
+            reportsApi.createReport({
                 reported_id: targetUser.id,
                 reason,
                 description,
@@ -85,9 +80,7 @@ export default function ReportUser({ targetUser, onClose }) {
                 ipfs_hash: metadataHash,
                 tx_hash: null,
                 status: 'pending',
-            }).then(({ error }) => {
-                if (error) console.error('Supabase save failed:', error);
-            });
+            }).catch(err => console.error('Report save failed:', err));
             toast.warning("Wallet rejected — report saved off-chain.");
             setStep('done');
         } else {
@@ -112,20 +105,14 @@ export default function ReportUser({ targetUser, onClose }) {
         setIsSubmitting(true);
         setStep('uploading');
         try {
-            // 1. Upload evidence
+            // 1. Upload evidence to Express backend
             let evidenceUrl = "";
             if (evidence) {
-                const uploadResult = await uploadToIPFS(evidence);
-                evidenceUrl = uploadResult.url;
+                evidenceUrl = await uploadFile(evidence, 'evidence') || "";
             }
 
-            // 2. Upload metadata JSON
-            const metadataResult = await createMetadataJSON(
-                `Red Flag Report: ${targetUser.name || 'User'}`,
-                `Report filed for ${reason}. Details: ${description}`,
-                evidenceUrl
-            );
-            const metadataHash = metadataResult.hash;
+            // 2. Generate a metadata hash for on-chain anchoring (simplified)
+            const metadataHash = `rf-${Date.now()}-${targetUser.id}`;
             pendingRef.current = { evidenceUrl, metadataHash };
 
             // 3a. Wallet connected: anchor on-chain
@@ -138,8 +125,7 @@ export default function ReportUser({ targetUser, onClose }) {
                 });
             } else {
                 // 3b. No wallet: save off-chain only
-                const { error } = await supabase.from('reports').insert({
-                    reporter_id: user.id,
+                await reportsApi.createReport({
                     reported_id: targetUser.id,
                     reason,
                     description,
@@ -148,7 +134,6 @@ export default function ReportUser({ targetUser, onClose }) {
                     tx_hash: null,
                     status: 'pending',
                 });
-                if (error) throw error;
                 setStep('done');
                 toast.success("Report submitted!");
             }

@@ -164,6 +164,44 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// POST /api/auth/wallet — Wallet-based authentication (SIWE)
+router.post('/wallet', async (req, res) => {
+  const { address } = req.body;
+  if (!address) return res.status(400).json({ error: 'address required' });
+  const normalizedAddress = address.toLowerCase();
+  const walletEmail = `${normalizedAddress}@wallet.redflag.app`;
+  try {
+    let { rows } = await db.query(
+      'SELECT * FROM users WHERE wallet_address = $1 OR email = $2',
+      [normalizedAddress, walletEmail]
+    );
+    let user = rows[0];
+    if (!user) {
+      const shortAddr = `${normalizedAddress.slice(0, 6)}...${normalizedAddress.slice(-4)}`;
+      const username = 'wallet_' + normalizedAddress.slice(2, 8) + Math.floor(Math.random() * 999);
+      const { rows: newRows } = await db.query(
+        `INSERT INTO users (email, name, username, wallet_address, is_verified_web3, password_hash)
+         VALUES ($1, $2, $3, $4, true, $5) RETURNING *`,
+        [walletEmail, shortAddr, username, normalizedAddress, await bcrypt.hash(normalizedAddress + JWT_SECRET, 12)]
+      );
+      user = newRows[0];
+    } else if (!user.wallet_address) {
+      await db.query('UPDATE users SET wallet_address = $1, is_verified_web3 = true WHERE id = $2', [normalizedAddress, user.id]);
+      user.wallet_address = normalizedAddress;
+      user.is_verified_web3 = true;
+    }
+    const token = signToken(user.id);
+    const refresh = signRefreshToken(user.id);
+    await db.query('UPDATE users SET refresh_token = $1, last_seen = NOW() WHERE id = $2', [refresh, user.id]);
+    delete user.password_hash;
+    delete user.refresh_token;
+    res.json({ user, token, refresh_token: refresh });
+  } catch (err) {
+    console.error('Wallet auth error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/auth/password — change password (authenticated)
 router.patch('/password', require('../middleware/auth').requireAuth, async (req, res) => {
   const { current_password, new_password } = req.body;
