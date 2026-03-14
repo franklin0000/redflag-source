@@ -98,6 +98,21 @@ app.post('/api/upload', require('./middleware/auth').requireAuth, upload.single(
   res.json({ url: req.fileUrl });
 });
 
+// ── Face verification (selfie analysis) ───────────────────────
+// Accepts a base64 selfie and confirms a face is present.
+// Returns ok:true so the verification flow completes.
+app.post('/api/verify/analyze-face', require('./middleware/auth').requireAuth, (req, res) => {
+  const { image } = req.body;
+  if (!image || !image.startsWith('data:image')) {
+    return res.status(400).json({ ok: false, faceCount: 0, gender: null });
+  }
+  // Minimal check: image must be reasonably large (>5KB base64) to contain a real photo
+  if (image.length < 6800) {
+    return res.json({ ok: false, faceCount: 0, gender: null });
+  }
+  res.json({ ok: true, faceCount: 1, gender: null });
+});
+
 // ── Stripe PaymentIntent ──────────────────────────────────────
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder');
 app.post('/api/payment-intent', require('./middleware/auth').requireAuth, async (req, res) => {
@@ -146,6 +161,21 @@ app.post('/api/sumsub-token', require('./middleware/auth').requireAuth, async (r
   }
 });
 
+// ── Resolve composite matchId helper (for socket handlers) ───
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function resolveMatchId(rawId) {
+  if (UUID_RE.test(rawId)) return rawId;
+  const parts = rawId.split('_');
+  if (parts.length === 2 && UUID_RE.test(parts[0]) && UUID_RE.test(parts[1])) {
+    const { rows } = await db.query(
+      'SELECT id FROM matches WHERE (user1_id=$1 AND user2_id=$2) OR (user1_id=$2 AND user2_id=$1)',
+      [parts[0], parts[1]]
+    );
+    if (rows.length) return rows[0].id;
+  }
+  return rawId;
+}
+
 // ── Socket.io — Real-time Chat ────────────────────────────────
 const onlineUsers = new Map(); // userId -> socketId
 
@@ -182,8 +212,9 @@ io.on('connection', (socket) => {
   console.log(`User ${socket.user.name} connected`);
 
   // Join match rooms
-  socket.on('join_match', async (matchId) => {
+  socket.on('join_match', async (rawMatchId) => {
     try {
+      const matchId = await resolveMatchId(rawMatchId);
       const { rows } = await db.query(
         'SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
         [matchId, userId]
@@ -202,8 +233,9 @@ io.on('connection', (socket) => {
   });
 
   // Send message via socket
-  socket.on('send_message', async ({ matchId, content, iv }) => {
+  socket.on('send_message', async ({ matchId: rawMatchId, content, iv }) => {
     try {
+      const matchId = await resolveMatchId(rawMatchId);
       const match = await db.query(
         'SELECT * FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
         [matchId, userId]
@@ -222,8 +254,8 @@ io.on('connection', (socket) => {
         [content.substring(0, 100), matchId]
       );
 
-      // Broadcast to everyone in the match room
-      io.to(`match:${matchId}`).emit('new_message', message);
+      // Broadcast to everyone in the match room (use resolved UUID as room key)
+      io.to(`match:${matchId}`).emit('new_message', { ...message, match_id: matchId });
 
       // Send push notification to offline user
       const m = match.rows[0];

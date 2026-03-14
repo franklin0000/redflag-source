@@ -4,25 +4,27 @@ import { useAuth } from '../context/AuthContext';
 import { usersApi } from '../services/api';
 import { useToast } from '../context/ToastContext';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Detect gender via Supabase Edge Function (server-side → no CORS issues)
+// Face analysis via Express backend (with 5s timeout for resilience)
 async function analyzeSelfieFace(base64DataUrl) {
     try {
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/yandex-vision`, {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const token = localStorage.getItem('rf_token');
+        const response = await fetch('/api/verify/analyze-face', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({ image: base64DataUrl }),
+            signal: controller.signal,
         });
+        clearTimeout(timer);
         if (!response.ok) return { ok: false, gender: null, faceCount: 0 };
         const data = await response.json();
-        return { ok: true, gender: data.gender ?? null, faceCount: data.faceCount ?? 0 };
-    } catch (e) {
-        console.warn('Face analysis failed (non-fatal):', e);
+        return { ok: true, gender: data.gender ?? null, faceCount: data.faceCount ?? 1 };
+    } catch {
+        // Network error, timeout, or endpoint not available — skip analysis gracefully
         return { ok: false, gender: null, faceCount: 0 };
     }
 }

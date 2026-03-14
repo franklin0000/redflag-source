@@ -2,6 +2,23 @@ const router = require('express').Router();
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
+// ── Helper: resolve composite "uuid_uuid" matchId to actual match UUID ──────
+// DatingChat constructs matchId as [user.id, partnerId].sort().join('_').
+// This helper accepts both real UUIDs and composite keys.
+async function resolveMatchId(rawId) {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (UUID_RE.test(rawId)) return rawId; // already a valid UUID
+  const parts = rawId.split('_');
+  if (parts.length === 2 && UUID_RE.test(parts[0]) && UUID_RE.test(parts[1])) {
+    const { rows } = await db.query(
+      'SELECT id FROM matches WHERE (user1_id=$1 AND user2_id=$2) OR (user1_id=$2 AND user2_id=$1)',
+      [parts[0], parts[1]]
+    );
+    if (rows.length) return rows[0].id;
+  }
+  return rawId; // return as-is; downstream query will 404/403 naturally
+}
+
 // GET /api/dating/profile — get my dating profile
 router.get('/profile', requireAuth, async (req, res) => {
   try {
@@ -187,10 +204,10 @@ router.get('/matches', requireAuth, async (req, res) => {
 // GET /api/dating/messages/:matchId
 router.get('/messages/:matchId', requireAuth, async (req, res) => {
   try {
-    // Verify user is part of this match
+    const matchId = await resolveMatchId(req.params.matchId);
     const match = await db.query(
       'SELECT id FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
-      [req.params.matchId, req.user.id]
+      [matchId, req.user.id]
     );
     if (!match.rows.length) return res.status(403).json({ error: 'Not your match' });
 
@@ -198,7 +215,7 @@ router.get('/messages/:matchId', requireAuth, async (req, res) => {
       `SELECT * FROM messages WHERE match_id = $1
        AND (expires_at IS NULL OR expires_at > NOW())
        ORDER BY created_at ASC`,
-      [req.params.matchId]
+      [matchId]
     );
     res.json(rows);
   } catch (err) {
@@ -211,21 +228,22 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
   const { content, iv } = req.body;
   if (!content) return res.status(400).json({ error: 'content required' });
   try {
+    const matchId = await resolveMatchId(req.params.matchId);
     const match = await db.query(
       'SELECT * FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
-      [req.params.matchId, req.user.id]
+      [matchId, req.user.id]
     );
     if (!match.rows.length) return res.status(403).json({ error: 'Not your match' });
 
     const { rows } = await db.query(
       `INSERT INTO messages (match_id, sender_id, content, iv)
        VALUES ($1,$2,$3,$4) RETURNING *`,
-      [req.params.matchId, req.user.id, content, iv || null]
+      [matchId, req.user.id, content, iv || null]
     );
 
     await db.query(
       `UPDATE matches SET last_message=$1, last_message_at=NOW() WHERE id=$2`,
-      [content.substring(0, 100), req.params.matchId]
+      [content.substring(0, 100), matchId]
     );
 
     res.status(201).json(rows[0]);
@@ -237,10 +255,11 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
 // PATCH /api/dating/messages/:matchId/read — mark as read
 router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
   try {
+    const matchId = await resolveMatchId(req.params.matchId);
     await db.query(
       `UPDATE messages SET is_read = TRUE
        WHERE match_id = $1 AND sender_id != $2`,
-      [req.params.matchId, req.user.id]
+      [matchId, req.user.id]
     );
     res.json({ ok: true });
   } catch (err) {
@@ -251,13 +270,13 @@ router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
 // DELETE /api/dating/messages/:matchId/all — clear chat history
 router.delete('/messages/:matchId/all', requireAuth, async (req, res) => {
   try {
-    // Verify user is in this match
+    const matchId = await resolveMatchId(req.params.matchId);
     const { rows } = await db.query(
       'SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
-      [req.params.matchId, req.user.id]
+      [matchId, req.user.id]
     );
     if (!rows.length) return res.status(403).json({ error: 'Not authorized' });
-    await db.query('DELETE FROM messages WHERE match_id = $1', [req.params.matchId]);
+    await db.query('DELETE FROM messages WHERE match_id = $1', [matchId]);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
