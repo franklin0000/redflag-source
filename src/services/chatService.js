@@ -14,7 +14,7 @@ export function subscribeToMessages(matchId, callback) {
   // Load message history via REST
   datingApi.getMessages(matchId)
     .then(data => { if (data) callback(data); })
-    .catch(() => {});
+    .catch(() => { });
 
   // Join the match room
   s.emit('join_match', matchId);
@@ -38,6 +38,15 @@ export function subscribeToMessages(matchId, callback) {
 
 export async function sendMessage(matchId, content, iv = null) {
   return datingApi.sendMessage(matchId, content, iv);
+}
+
+export function subscribeToRoomParticipants(matchId, callback) {
+  const s = socket();
+  const handler = (participants) => {
+    callback(participants);
+  };
+  s.on('room_participants', handler);
+  return () => s.off('room_participants', handler);
 }
 
 export function subscribeToTyping(matchId, callback) {

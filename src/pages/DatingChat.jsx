@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDating } from '../context/DatingContext';
 import { useToast } from '../context/ToastContext';
-import { sendMessage, subscribeToMessages, uploadChatAttachment } from '../services/chatService';
+import { sendMessage, subscribeToMessages, subscribeToRoomParticipants, uploadChatAttachment } from '../services/chatService';
 import { userExtras, reportsApi, datingApi } from '../services/api';
 
 
@@ -38,6 +38,7 @@ export default function DatingChat() {
     const [activeCallType, setActiveCallType] = useState('video'); // 'video' or 'audio'
     const [incomingCall, setIncomingCall] = useState(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [participants, setParticipants] = useState([]);
 
     // Refs
 
@@ -215,9 +216,15 @@ export default function DatingChat() {
             }
         );
 
+        // Participants
+        const unsubscribeParticipants = subscribeToRoomParticipants(matchId, (list) => {
+            setParticipants(list);
+        });
+
         return () => {
             unsubscribeMessages();
             unsubscribeCalls();
+            unsubscribeParticipants();
         };
     }, [matchId, user?.id, markMatchRead]);
 
@@ -226,11 +233,11 @@ export default function DatingChat() {
         if (!matchId || !user?.id) return;
 
         // Check muted
-        userExtras.getMuteStatus(matchId).then(d => { if (d?.muted) setIsMuted(true); }).catch(() => {});
+        userExtras.getMuteStatus(matchId).then(d => { if (d?.muted) setIsMuted(true); }).catch(() => { });
 
         // Check blocked
         if (targetUserId) {
-            userExtras.getBlocked().then(list => { if (list?.some(b => b.id === targetUserId)) setIsBlocked(true); }).catch(() => {});
+            userExtras.getBlocked().then(list => { if (list?.some(b => b.id === targetUserId)) setIsBlocked(true); }).catch(() => { });
         }
     }, [matchId, user?.id, targetUserId]);
 
@@ -346,7 +353,7 @@ export default function DatingChat() {
         if (!window.confirm('Clear all messages? This cannot be undone.')) return;
         try {
             if (isValidUUID(user?.id) && matchId) {
-                await datingApi.deleteMessages(matchId).catch(() => {});
+                await datingApi.deleteMessages(matchId).catch(() => { });
             }
             setMessages([]);
             toast.success('Chat cleared');
@@ -630,9 +637,16 @@ export default function DatingChat() {
                             {match?.name || 'Unknown'}
                             {match?.isVerified && <span className="material-icons text-blue-400 text-[14px]">verified</span>}
                         </h3>
-                        <p className="text-[10px] text-purple-400 uppercase tracking-wider flex items-center gap-1">
-                            <span className="material-icons text-[10px]">lock</span> End-to-End Encrypted
-                        </p>
+                        <div className="flex flex-col">
+                            {participants.find(p => p.id === targetUserId)?.online && (
+                                <p className="text-[11px] text-green-400 font-bold tracking-wide animate-pulse">
+                                    • Online
+                                </p>
+                            )}
+                            <p className="text-[10px] text-purple-400 uppercase tracking-wider flex items-center gap-1">
+                                <span className="material-icons text-[10px]">lock</span> End-to-End Encrypted
+                            </p>
+                        </div>
                     </div>
                 </div>
 

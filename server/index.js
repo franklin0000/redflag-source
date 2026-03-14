@@ -11,7 +11,7 @@ const app = express();
 const server = http.createServer(app);
 const ALLOWED_ORIGIN = process.env.FRONTEND_URL || 'https://redflag-source.onrender.com';
 const io = new SocketIO(server, {
-  cors: { origin: [ALLOWED_ORIGIN, 'http://localhost:5173'], methods: ['GET', 'POST'] },
+  cors: { origin: [ALLOWED_ORIGIN, 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'], methods: ['GET', 'POST'] },
 });
 
 const PORT = process.env.PORT || 3001;
@@ -19,7 +19,7 @@ const db = require('./db');
 const { JWT_SECRET } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 
-app.use(cors({ origin: [ALLOWED_ORIGIN, 'http://localhost:5173'], credentials: true }));
+app.use(cors({ origin: [ALLOWED_ORIGIN, 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'], credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 // ── Serve React frontend (dist/) ──────────────────────────────
@@ -212,6 +212,25 @@ io.on('connection', (socket) => {
   console.log(`User ${socket.user.name} connected`);
 
   // Join match rooms
+  const verifyAndEmitParticipants = async (io, matchId) => {
+    try {
+      const roomSockets = await io.in(`match:${matchId}`).fetchSockets();
+      const participants = roomSockets.map(s => ({
+        id: s.user.id,
+        name: s.user.name,
+        online: true
+      }));
+      // Remove duplicates by user id
+      const uniqueParticipants = Object.values(participants.reduce((acc, p) => {
+        acc[p.id] = p;
+        return acc;
+      }, {}));
+      io.to(`match:${matchId}`).emit('room_participants', uniqueParticipants);
+    } catch (err) {
+      console.error('emit participants error:', err);
+    }
+  };
+
   socket.on('join_match', async (rawMatchId) => {
     try {
       const matchId = await resolveMatchId(rawMatchId);
@@ -226,6 +245,9 @@ io.on('connection', (socket) => {
           'UPDATE messages SET is_read=TRUE WHERE match_id=$1 AND sender_id!=$2',
           [matchId, userId]
         );
+
+        // Broadcast participants
+        verifyAndEmitParticipants(io, matchId);
       }
     } catch (err) {
       console.error('join_match error:', err.message);
@@ -255,7 +277,7 @@ io.on('connection', (socket) => {
       );
 
       // Broadcast to everyone in the match room (use resolved UUID as room key)
-      io.to(`match:${matchId}`).emit('new_message', { ...message, match_id: matchId });
+      io.to(`match:${matchId}`).emit('new_message', { ...message, match_id: matchId, room_id: rawMatchId });
 
       // Send push notification to offline user
       const m = match.rows[0];
@@ -307,22 +329,59 @@ io.on('connection', (socket) => {
   });
 
   // Typing indicator
-  socket.on('typing', ({ matchId, isTyping }) => {
-    socket.to(`match:${matchId}`).emit('user_typing', { userId, isTyping });
+  socket.on('typing', async ({ matchId: rawMatchId, isTyping }) => {
+    const matchId = await resolveMatchId(rawMatchId);
+    socket.to(`match:${matchId}`).emit('typing', { matchId: rawMatchId, userId, isTyping });
   });
 
   // WebRTC call signaling — matchId must be included in payload so receivers can filter
-  socket.on('call:signal', ({ matchId, signal, from, type, callType }) => {
-    socket.to(`match:${matchId}`).emit('call:signal', { matchId, signal, from, type, callType });
+  socket.on('call:signal', async ({ matchId: rawMatchId, signal, from, type, callType }) => {
+    const matchId = await resolveMatchId(rawMatchId);
+    socket.to(`match:${matchId}`).emit('call:signal', { matchId: rawMatchId, signal, from, type, callType });
   });
 
-  socket.on('call:end', ({ matchId }) => {
-    socket.to(`match:${matchId}`).emit('call:end', { matchId });
+  socket.on('call:end', async ({ matchId: rawMatchId }) => {
+    const matchId = await resolveMatchId(rawMatchId);
+    socket.to(`match:${matchId}`).emit('call:end', { matchId: rawMatchId });
   });
 
   // Live Radar — location sharing
-  socket.on('location:update', ({ matchId, lat, lng }) => {
+  socket.on('location:update', async ({ matchId: rawMatchId, lat, lng }) => {
+    const matchId = await resolveMatchId(rawMatchId);
     socket.to(`match:${matchId}`).emit('location:update', { userId, lat, lng });
+  });
+
+  // Video Call Real-Time Room & Tokens
+  socket.on('join_video_call', async (matchId) => {
+    const callRoom = `video_call:${matchId}`;
+    socket.join(callRoom);
+
+    // Asignar token exclusivo para validación (requisito)
+    const callToken = jwt.sign({ matchId, userId, type: 'video_call_access' }, JWT_SECRET, { expiresIn: '1h' });
+    socket.emit('call_token_assigned', { token: callToken, room: callRoom });
+
+    // Emitir participantes actualizados a la sala privada
+    try {
+      const roomSockets = await io.in(callRoom).fetchSockets();
+      const participants = roomSockets.map(s => ({ id: s.user.id, name: s.user.name }));
+      const uniqueParticipants = Object.values(participants.reduce((acc, p) => {
+        acc[p.id] = p; return acc;
+      }, {}));
+      io.to(callRoom).emit('video_call_participants', uniqueParticipants);
+    } catch (err) { }
+  });
+
+  socket.on('leave_video_call', async (matchId) => {
+    const callRoom = `video_call:${matchId}`;
+    socket.leave(callRoom);
+    try {
+      const roomSockets = await io.in(callRoom).fetchSockets();
+      const participants = roomSockets.map(s => ({ id: s.user.id, name: s.user.name }));
+      const uniqueParticipants = Object.values(participants.reduce((acc, p) => {
+        acc[p.id] = p; return acc;
+      }, {}));
+      io.to(callRoom).emit('video_call_participants', uniqueParticipants);
+    } catch (err) { }
   });
 
   // LiveDateRadar — radar rooms
@@ -336,6 +395,28 @@ io.on('connection', (socket) => {
   // Community Rooms — real-time post broadcast
   socket.on('join_community_room', (roomId) => {
     if (roomId) socket.join(`community:${roomId}`);
+  });
+
+  socket.on('disconnecting', () => {
+    socket.rooms.forEach(room => {
+      if (room.startsWith('match:')) {
+        const matchId = room.split(':')[1];
+        setTimeout(() => verifyAndEmitParticipants(io, matchId), 100);
+      }
+      if (room.startsWith('video_call:')) {
+        const matchId = room.split(':')[1];
+        setTimeout(async () => {
+          try {
+            const roomSockets = await io.in(room).fetchSockets();
+            const participants = roomSockets.map(s => ({ id: s.user.id, name: s.user.name }));
+            const uniqueParticipants = Object.values(participants.reduce((acc, p) => {
+              acc[p.id] = p; return acc;
+            }, {}));
+            io.to(room).emit('video_call_participants', uniqueParticipants);
+          } catch (e) { }
+        }, 100);
+      }
+    });
   });
 
   socket.on('disconnect', () => {

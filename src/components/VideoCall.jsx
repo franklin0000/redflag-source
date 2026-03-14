@@ -14,6 +14,7 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
     const [deepfakeResult, setDeepfakeResult] = useState(null);
     const [showDeepfakeInfo, setShowDeepfakeInfo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [participants, setParticipants] = useState([]);
     const screenStreamRef = useRef(null);
 
     const [error, setError] = useState(null);
@@ -21,6 +22,16 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
     const myVideo = useRef();
     const userVideo = useRef();
     const connectionRef = useRef();
+
+    useEffect(() => {
+        let unsubscribe = () => { };
+        if (matchId) {
+            unsubscribe = callService.joinCallRoom(matchId, (parts) => {
+                setParticipants(parts);
+            });
+        }
+        return () => unsubscribe();
+    }, [matchId]);
 
     useEffect(() => {
         let mounted = true;
@@ -44,7 +55,7 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
                         setStream(localStream);
                         connectionRef.current = peer;
                         setStatus('Connected');
-                        
+
                         // Start deepfake detection for video calls
                         if (callType === 'video' || incomingSignal?.callType === 'video') {
                             startDeepfakeAnalysis(
@@ -191,7 +202,7 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
             setIsRecording(false);
             setRecordingTime(0);
         } else {
-            callService.startRecording(stream, () => {});
+            callService.startRecording(stream, () => { });
             setIsRecording(true);
         }
     };
@@ -359,35 +370,47 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
                 )}
             </div>
 
-            {/* Recording Indicator */}
-            {isRecording && (
-                <div className="absolute top-6 left-6 flex items-center gap-2 px-4 py-2 bg-red-600/90 backdrop-blur-xl rounded-full border border-red-500 shadow-lg">
-                    <span className="w-3 h-3 bg-white rounded-full animate-pulse"></span>
-                    <span className="text-white text-sm font-bold">{formatTime(recordingTime)}</span>
+            {/* Top Left Indicators (Recording & Participants) */}
+            <div className="absolute top-6 left-6 flex flex-col gap-3 z-[90]">
+                {/* Recording Indicator */}
+                {isRecording && (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-red-600/90 backdrop-blur-xl rounded-full border border-red-500 shadow-lg w-max">
+                        <span className="w-3 h-3 bg-white rounded-full animate-pulse"></span>
+                        <span className="text-white text-sm font-bold">{formatTime(recordingTime)}</span>
+                    </div>
+                )}
+
+                {/* Participants List */}
+                <div className="flex flex-col gap-2">
+                    <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1 ml-2">Private Call Participants</div>
+                    {participants.map(p => (
+                        <div key={p.id} className="flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full border border-purple-500/30 shadow-lg w-max shadow-purple-900/20">
+                            <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse"></span>
+                            <span className="text-white text-xs font-semibold">{p.name} {p.id === userId ? '(You)' : ''}</span>
+                        </div>
+                    ))}
                 </div>
-            )}
+            </div>
 
             {/* Deepfake Detection Indicator */}
             {deepfakeResult && (
                 <button
                     onClick={() => setShowDeepfakeInfo(!showDeepfakeInfo)}
-                    className={`absolute top-6 left-1/2 transform -translate-x-1/2 flex items-center gap-2 px-4 py-2 backdrop-blur-xl rounded-full border shadow-lg transition-colors ${
-                        deepfakeResult.risk === 'low' 
+                    className={`absolute top-6 left-1/2 transform -translate-x-1/2 flex items-center gap-2 px-4 py-2 backdrop-blur-xl rounded-full border shadow-lg transition-colors ${deepfakeResult.risk === 'low'
                             ? 'bg-green-600/90 border-green-500 text-white'
                             : deepfakeResult.risk === 'medium'
-                            ? 'bg-yellow-600/90 border-yellow-500 text-white'
-                            : 'bg-red-600/90 border-red-500 text-white'
-                    }`}
+                                ? 'bg-yellow-600/90 border-yellow-500 text-white'
+                                : 'bg-red-600/90 border-red-500 text-white'
+                        }`}
                 >
-                    <span className={`w-2 h-2 rounded-full ${
-                        deepfakeResult.risk === 'low' ? 'bg-green-400' 
-                        : deepfakeResult.risk === 'medium' ? 'bg-yellow-400' 
-                        : 'bg-red-400 animate-pulse'
-                    }`}></span>
+                    <span className={`w-2 h-2 rounded-full ${deepfakeResult.risk === 'low' ? 'bg-green-400'
+                            : deepfakeResult.risk === 'medium' ? 'bg-yellow-400'
+                                : 'bg-red-400 animate-pulse'
+                        }`}></span>
                     <span className="text-sm font-medium">
-                        {deepfakeResult.risk === 'low' ? 'Verified ✓' 
-                        : deepfakeResult.risk === 'medium' ? 'Warning' 
-                        : 'Check Carefully'}
+                        {deepfakeResult.risk === 'low' ? 'Verified ✓'
+                            : deepfakeResult.risk === 'medium' ? 'Warning'
+                                : 'Check Carefully'}
                     </span>
                 </button>
             )}
@@ -404,11 +427,10 @@ export default function VideoCall({ matchId, userId, callType, incomingSignal, o
                     <div className="space-y-2">
                         <div className="flex justify-between text-sm">
                             <span className="text-gray-400">Risk Level:</span>
-                            <span className={`font-bold ${
-                                deepfakeResult.risk === 'low' ? 'text-green-400'
-                                : deepfakeResult.risk === 'medium' ? 'text-yellow-400'
-                                : 'text-red-400'
-                            }`}>
+                            <span className={`font-bold ${deepfakeResult.risk === 'low' ? 'text-green-400'
+                                    : deepfakeResult.risk === 'medium' ? 'text-yellow-400'
+                                        : 'text-red-400'
+                                }`}>
                                 {deepfakeResult.risk.toUpperCase()}
                             </span>
                         </div>

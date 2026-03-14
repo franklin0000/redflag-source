@@ -117,10 +117,31 @@ export const callService = {
     };
   },
 
+  joinCallRoom: (matchId, onParticipantsUpdate) => {
+    const s = socket();
+    s.emit('join_video_call', matchId);
+
+    // Backend generates exclusive token for privacy validations
+    s.on('call_token_assigned', ({ token, room }) => {
+      console.log(`Joined private call room ${room} securely`);
+    });
+
+    const handler = (participants) => {
+      if (onParticipantsUpdate) onParticipantsUpdate(participants);
+    };
+    s.on('video_call_participants', handler);
+
+    return () => {
+      s.off('video_call_participants', handler);
+      s.off('call_token_assigned');
+      s.emit('leave_video_call', matchId);
+    };
+  },
+
   startRecording: (stream, onDataAvailable) => {
     recordedChunks = [];
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-      ? 'video/webm;codecs=vp9,opus' 
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      ? 'video/webm;codecs=vp9,opus'
       : 'video/webm';
 
     mediaRecorder = new MediaRecorder(stream, { mimeType });
@@ -166,12 +187,12 @@ export const callService = {
         },
         audio: true,
       });
-      
+
       // Handle when user stops sharing via browser UI
       stream.getVideoTracks()[0].onended = () => {
         if (onStream) onStream(null, true);
       };
-      
+
       if (onStream) onStream(stream, false);
       return stream;
     } catch (err) {
