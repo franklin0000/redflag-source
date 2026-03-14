@@ -4,8 +4,8 @@ import { authApi, usersApi, setToken, getToken } from '../services/api';
 import { connectSocket, disconnectSocket } from '../services/socketService';
 
 const setRefreshToken = (t) => t
-  ? localStorage.setItem('rf_refresh', t)
-  : localStorage.removeItem('rf_refresh');
+    ? localStorage.setItem('rf_refresh', t)
+    : localStorage.removeItem('rf_refresh');
 
 const AuthContext = createContext(null);
 
@@ -27,8 +27,8 @@ export const AuthProvider = ({ children }) => {
             }
             try {
                 const data = await authApi.me();
-                if (mountedRef.current && data) {
-                    setUser(normalizeUser(data));
+                if (mountedRef.current && data && data.user) {
+                    setUser(normalizeUser(data.user));
                     connectSocket();
                 }
             } catch {
@@ -90,7 +90,7 @@ export const AuthProvider = ({ children }) => {
     const refreshUser = async () => {
         try {
             const data = await authApi.me();
-            if (mountedRef.current && data) setUser(normalizeUser(data));
+            if (mountedRef.current && data && data.user) setUser(normalizeUser(data.user));
         } catch {
             // silently fail
         }
