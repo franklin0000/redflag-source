@@ -50,9 +50,14 @@ pool.query(`
 `).catch(err => console.error('Migration error (get_matches_by_distance):', err.message));
 
 // Auto-migrate: add room_id to posts, expires_at to messages
-pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS room_id TEXT DEFAULT 'general'`).catch(() => {});
-pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_room ON posts(room_id, created_at DESC)`).catch(() => {});
-pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '24 hours')`).catch(() => {});
+pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS room_id TEXT DEFAULT 'general'`).catch(() => { });
+pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_room ON posts(room_id, created_at DESC)`).catch(() => { });
+pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '24 hours')`).catch(() => { });
+
+// Auto-migrate dating columns
+pool.query(`ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS looking_for TEXT`).catch(() => { });
+pool.query(`ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS gender TEXT`).catch(() => { });
+pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT`).catch(() => { });
 
 // Auto-migrate: ensure comments table exists
 pool.query(`
@@ -67,8 +72,8 @@ pool.query(`
   )
 `).catch(err => console.error('Migration error (comments):', err.message));
 
-pool.query(`ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS height TEXT`).catch(() => {});
-pool.query(`ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS profile_data JSONB DEFAULT '{}'`).catch(() => {});
+pool.query(`ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS height TEXT`).catch(() => { });
+pool.query(`ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS profile_data JSONB DEFAULT '{}'`).catch(() => { });
 
 // Auto-migrate: trusted_contacts
 pool.query(`

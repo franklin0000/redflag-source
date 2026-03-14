@@ -117,14 +117,14 @@ export const DatingProvider = ({ children }) => {
     }, []);
 
     // ── Mark match as read ────────────────────────────────────────
-    function markMatchRead(matchId) {
+    const markMatchRead = useCallback((matchId) => {
         const ts = getReadTimestamps();
         ts[matchId] = new Date().toISOString();
         localStorage.setItem(UNREAD_KEY, JSON.stringify(ts));
         setMatches(prev => prev.map(m =>
             m.match_id === matchId ? { ...m, unread: 0 } : m
         ));
-    }
+    }, []);
 
     return (
         <DatingContext.Provider value={{
