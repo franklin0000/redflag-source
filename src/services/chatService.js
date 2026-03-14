@@ -70,15 +70,15 @@ export function subscribeToAnonMessages(room, callback) {
       });
     }
   };
-  s.on('anon_message', handler);
+  s.on('new_anon_message', handler);
 
-  return () => s.off('anon_message', handler);
+  return () => s.off('new_anon_message', handler);
 }
 
 export async function sendAnonMessage(room, text, nickname, avatar, attachment = null, type = 'text') {
   socket().emit('send_anon_message', {
     room,
-    content: text,
+    text,
     nickname,
     avatar,
     attachment,

@@ -279,13 +279,13 @@ io.on('connection', (socket) => {
     socket.to(`match:${matchId}`).emit('user_typing', { userId, isTyping });
   });
 
-  // WebRTC call signaling
+  // WebRTC call signaling — matchId must be included in payload so receivers can filter
   socket.on('call:signal', ({ matchId, signal, from, type, callType }) => {
-    socket.to(`match:${matchId}`).emit('call:signal', { signal, from, type, callType });
+    socket.to(`match:${matchId}`).emit('call:signal', { matchId, signal, from, type, callType });
   });
 
   socket.on('call:end', ({ matchId }) => {
-    socket.to(`match:${matchId}`).emit('call:end');
+    socket.to(`match:${matchId}`).emit('call:end', { matchId });
   });
 
   // Live Radar — location sharing

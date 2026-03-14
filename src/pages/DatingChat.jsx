@@ -653,7 +653,7 @@ export default function DatingChat() {
 
                     <button
                         onClick={() => handleStartCall('video')}
-                        className="p-2 rounded-full hover:bg-white/10 text-white/90 hidden sm:block"
+                        className="p-2 rounded-full hover:bg-white/10 text-white/90"
                         title="Video Call"
                     >
                         <span className="material-icons">videocam</span>
