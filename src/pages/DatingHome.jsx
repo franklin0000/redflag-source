@@ -9,7 +9,7 @@ import AdComponent from '../components/AdComponent';
 import LocationSearchModal from '../components/Dating/LocationSearchModal';
 
 export default function DatingHome() {
-    const { potentialMatches, fetchMatches, swipeProfile, loading, isDatingMode, toggleMode } = useDating();
+    const { potentialMatches, fetchMatches, swipeProfile, loading, isDatingMode, toggleMode, datingProfile } = useDating();
     const toast = useToast();
     const navigate = useNavigate();
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -103,6 +103,28 @@ export default function DatingHome() {
     };
 
     if (loading) return <div className="h-screen flex items-center justify-center text-white">Finding safe matches...</div>;
+
+    // Onboarding: user hasn't created a dating profile yet
+    if (!datingProfile) {
+        return (
+            <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mb-6 shadow-lg shadow-purple-900/50">
+                    <span className="material-icons text-5xl">favorite</span>
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Set Up Your Dating Profile</h2>
+                <p className="text-gray-400 text-sm mb-8">Create your dating profile to start meeting people and appear in their matches.</p>
+                <button
+                    onClick={() => navigate('/dating/profile')}
+                    className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-bold shadow-lg shadow-purple-900/30 text-lg"
+                >
+                    Create Dating Profile
+                </button>
+                <button onClick={() => navigate('/')} className="mt-4 text-gray-500 text-sm">
+                    Maybe later
+                </button>
+            </div>
+        );
+    }
 
     const currentProfile = potentialMatches[currentIndex];
 

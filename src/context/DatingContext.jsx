@@ -64,9 +64,7 @@ export const DatingProvider = ({ children }) => {
         if (!user) return;
         setLoading(true);
         try {
-            const userLat = lat ?? 0;
-            const userLng = lng ?? 0;
-            const data = await datingApi.getPotentialMatches(userLat, userLng, mode);
+            const data = await datingApi.getPotentialMatches(lat, lng, mode);
             setPotentialMatches(data || []);
         } catch (err) {
             console.error('fetchMatches error:', err.message);

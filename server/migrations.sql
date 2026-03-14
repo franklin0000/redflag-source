@@ -56,3 +56,76 @@ CREATE TABLE IF NOT EXISTS anon_messages (
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_anon_messages_room ON anon_messages(room, created_at ASC);
+
+-- Message expiration support
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+-- Guardian sessions (SafeDate / DateCheckIn)
+CREATE TABLE IF NOT EXISTS guardian_sessions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT UNIQUE NOT NULL,
+  status      TEXT DEFAULT 'active',
+  location    TEXT,
+  lat         DOUBLE PRECISION,
+  lng         DOUBLE PRECISION,
+  contacts    JSONB DEFAULT '[]',
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  ended_at    TIMESTAMPTZ
+);
+
+-- Trusted contacts (DateCheckIn)
+CREATE TABLE IF NOT EXISTS trusted_contacts (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  phone       TEXT,
+  email       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- SOS alerts
+CREATE TABLE IF NOT EXISTS sos_alerts (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  lat         DOUBLE PRECISION,
+  lng         DOUBLE PRECISION,
+  message     TEXT,
+  status      TEXT DEFAULT 'active',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Custom emojis
+CREATE TABLE IF NOT EXISTS custom_emojis (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  layers      JSONB NOT NULL,
+  svg_content TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Extra user columns
+ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- Extra post columns
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS room_id TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_type TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_name TEXT;
+
+-- Location flags (RedFlagMap) — in case schema.sql wasn't run fresh
+CREATE TABLE IF NOT EXISTS location_flags (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  place_id    TEXT,
+  place_name  TEXT,
+  lat         DOUBLE PRECISION NOT NULL,
+  lng         DOUBLE PRECISION NOT NULL,
+  flag_type   TEXT NOT NULL DEFAULT 'red',
+  comment     TEXT,
+  media       JSONB DEFAULT '[]',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_location_flags_lat_lng ON location_flags(lat, lng);
