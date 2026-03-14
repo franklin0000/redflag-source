@@ -201,6 +201,14 @@ export default function DatingChat() {
     useEffect(() => {
         if (!matchId || !user?.id) return;
 
+        // Verify match exists before subscribing — redirect if stale/missing
+        datingApi.getMessages(matchId).catch((err) => {
+            if (err.message?.includes('not found') || err.message?.includes('Not your match')) {
+                toast.error('This match no longer exists');
+                navigate('/dating/matches');
+            }
+        });
+
         // Messages
         const unsubscribeMessages = subscribeToMessages(matchId, (msgs) => {
             setMessages(msgs);

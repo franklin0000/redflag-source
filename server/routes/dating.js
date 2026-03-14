@@ -16,7 +16,7 @@ async function resolveMatchId(rawId) {
     );
     if (rows.length) return rows[0].id;
   }
-  return rawId; // return as-is; downstream query will 404/403 naturally
+  return null; // not resolvable — caller should return 404
 }
 
 // GET /api/dating/profile — get my dating profile
@@ -205,6 +205,7 @@ router.get('/matches', requireAuth, async (req, res) => {
 router.get('/messages/:matchId', requireAuth, async (req, res) => {
   try {
     const matchId = await resolveMatchId(req.params.matchId);
+    if (!matchId) return res.status(404).json({ error: 'Match not found' });
     const match = await db.query(
       'SELECT id FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
       [matchId, req.user.id]
@@ -229,6 +230,7 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
   if (!content) return res.status(400).json({ error: 'content required' });
   try {
     const matchId = await resolveMatchId(req.params.matchId);
+    if (!matchId) return res.status(404).json({ error: 'Match not found' });
     const match = await db.query(
       'SELECT * FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
       [matchId, req.user.id]
@@ -256,6 +258,7 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
 router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
   try {
     const matchId = await resolveMatchId(req.params.matchId);
+    if (!matchId) return res.status(404).json({ error: 'Match not found' });
     await db.query(
       `UPDATE messages SET is_read = TRUE
        WHERE match_id = $1 AND sender_id != $2`,
@@ -271,6 +274,7 @@ router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
 router.delete('/messages/:matchId/all', requireAuth, async (req, res) => {
   try {
     const matchId = await resolveMatchId(req.params.matchId);
+    if (!matchId) return res.status(404).json({ error: 'Match not found' });
     const { rows } = await db.query(
       'SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)',
       [matchId, req.user.id]
