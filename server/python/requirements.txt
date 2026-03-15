@@ -1,0 +1,8 @@
+insightface
+deepface
+faiss-cpu
+onnxruntime
+opencv-python-headless
+numpy
+requests
+pillow

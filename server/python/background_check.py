@@ -4,35 +4,39 @@ import os
 import subprocess
 import time
 
-def process_deepface(img_path):
-    # Tries to use DeepFace, returns mock data if not installed or no DB
+def process_scanner(img_path):
     try:
-        from deepface import DeepFace
-        db_path = os.path.join(os.path.dirname(__file__), "known_faces_db")
-        if not os.path.exists(db_path):
-            os.makedirs(db_path)
-        
-        # In a real environment with images in known_faces_db, this would return matches
-        dfs = DeepFace.find(img_path=img_path, db_path=db_path, model_name="Facenet", enforce_detection=False)
+        from scanner import scan_face
+        res = scan_face(img_path)
         
         results = []
-        if len(dfs) > 0 and not dfs[0].empty:
-            for index, row in dfs[0].iterrows():
+        if res.get("ok"):
+            if res.get("local_match"):
                 results.append({
-                    "score": round((1 - row['distance']) * 100, 2), # Simplified distance to score
-                    "url": f"local_db://{os.path.basename(row['identity'])}",
+                    "score": round((1 - res.get("distance", 0)) * 100, 2),
+                    "url": res.get("url", "local_db://match"),
                     "group": "Face Match",
-                    "title": f"Local Match: {os.path.basename(row['identity'])}",
+                    "title": f"Local Match: {res.get('name', 'Known Person')}",
                     "icon": "face",
                     "isRisk": True,
-                    "isTargetedSearch": False
+                    "isTargetedSearch": False,
+                    "attributes": res.get("attributes", {})
                 })
-        return results if results else mock_face_matches()
-    except ImportError:
-        # Graceful fallback for environments without deepface installed (e.g., standard Render node dyno)
-        return mock_face_matches()
+            elif res.get("web_search_url"):
+                results.append({
+                    "score": 0,
+                    "url": res.get("web_search_url"),
+                    "group": "Web Search",
+                    "title": "Abriendo búsqueda profunda en Yandex...",
+                    "icon": "travel_explore",
+                    "isRisk": False,
+                    "isTargetedSearch": True,
+                    "openNow": True # Pista para el frontend
+                })
+        return results if results else []
     except Exception as e:
-        return mock_face_matches(error=str(e))
+        print(f"Error in scanner: {e}", file=sys.stderr)
+        return []
 
 def process_sherlock(username):
     # Tries to run sherlock via CLI
@@ -114,7 +118,7 @@ if __name__ == "__main__":
     sherlock_results = []
     
     if img_path and img_path != "none":
-        face_results = process_deepface(img_path)
+        face_results = process_scanner(img_path)
         
     if username_query:
         sherlock_results = process_sherlock(username_query)

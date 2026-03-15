@@ -10,10 +10,7 @@
 
 const API_TOKEN = import.meta.env.VITE_FACECHECK_TOKEN || '';
 
-const getFunctionUrl = (name) => {
-    const base = import.meta.env.VITE_SUPABASE_URL || '';
-    return `${base}/functions/v1/${name}`;
-};
+const BASE = import.meta.env.VITE_API_URL || '';
 
 // Use real mode when token is set, testing mode otherwise.
 // Testing mode: inaccurate results but credits NOT deducted.
@@ -102,20 +99,15 @@ function formatItems(items) {
     });
 }
 
-/**
- * Upload a photo to FaceCheck.id via Supabase Edge Function proxy.
- * @param {File} fileObject
- * @returns {Promise<{ id_search?: string, message?: string, error?: string, code?: string }>}
- */
 export async function uploadPhoto(fileObject) {
-    const url = getFunctionUrl('facecheck-proxy');
+    const url = `${BASE}/api/upload_pic`;
 
     const formData = new FormData();
     formData.append('images', fileObject);
     formData.append('id_search', '');
 
     try {
-        const response = await fetch(`${url}/upload_pic`, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Authorization': API_TOKEN },
             body: formData,
@@ -128,14 +120,8 @@ export async function uploadPhoto(fileObject) {
     }
 }
 
-/**
- * Poll FaceCheck.id via Supabase Edge Function proxy until face search results are ready.
- * @param {string} idSearch — from uploadPhoto response
- * @param {function} onProgress — called with 0–100 progress value
- * @returns {Promise<{ items?: Array, error?: string, code?: string }>}
- */
 export async function pollResults(idSearch, onProgress) {
-    const url = getFunctionUrl('facecheck-proxy');
+    const url = `${BASE}/api/search`;
     const testingMode = isTestingMode();
     const payload = {
         id_search: idSearch,
@@ -150,7 +136,7 @@ export async function pollResults(idSearch, onProgress) {
     while (attempts < maxAttempts) {
         attempts++;
         try {
-            const response = await fetch(`${url}/search`, {
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

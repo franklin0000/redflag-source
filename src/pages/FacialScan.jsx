@@ -64,35 +64,38 @@ export default function FacialScan() {
                 setProgress(40);
                 await new Promise(r => setTimeout(r, 400));
 
-                // ── STEP 2: DeepFace + Sherlock Background Check ──
+                // ── STEP 2: Local RedFlag Scanner Engine ──
                 if (!isMounted) return;
-                setStatus('Connecting to Local Background Check engine...');
-                setProgress(48);
+                setStatus('Deploying RedFlag detection neural nets...');
+                setProgress(50);
 
-                if (!isMounted) return;
-                setStatus('DeepFace & Sherlock search in progress...');
-                setProgress(55);
+                const { runLocalScan } = await import('../services/scannerService');
+                const scanRes = await runLocalScan(file);
 
-                const formData = new FormData();
-                formData.append('file', file);
-
-                const { searchesApi } = await import('../services/api');
-                const data = await searchesApi.backgroundCheck(file);
+                if (scanRes.error) {
+                    throw new Error(scanRes.error || 'Local scan failed.');
+                }
 
                 if (!isMounted) return;
                 setProgress(95);
-                setStatus('Merging results...');
+                setStatus('Finalizing forensic report...');
 
                 // ── STEP 3: Merge results ──
-                const merged = data.results || [];
+                const results = scanRes.results || [];
 
-                await new Promise(r => setTimeout(r, 300));
+                // Check for automatic web search redirect
+                const autoOpen = results.find(r => r.openNow && r.url);
+                if (autoOpen) {
+                    window.open(autoOpen.url, '_blank');
+                }
+
+                await new Promise(r => setTimeout(r, 600));
                 if (!isMounted) return;
                 setProgress(100);
-                setStatus('Report ready.');
+                setStatus('Encryption complete. Report ready.');
                 await new Promise(r => setTimeout(r, 400));
 
-                setScanDetails(merged, base64String);
+                setScanDetails(results, base64String);
                 navigate('/results');
 
             } catch (error) {

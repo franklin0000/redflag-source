@@ -3,7 +3,7 @@ services:
   - type: web
     name: redflag-app
     runtime: node
-    buildCommand: npm install && npm run build && cd server && npm install
+    buildCommand: npm install && npm run build && cd server && npm install && pip install -r python/requirements.txt
     startCommand: node server/index.js
     envVars:
       - key: PORT
