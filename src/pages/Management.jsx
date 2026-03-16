@@ -162,6 +162,26 @@ export default function Management() {
 
     const handleLogout = () => { logout(); navigate('/login'); };
 
+    // ── Resize image to max 800×800 via canvas before upload (keeps photos < 200KB → stored as base64) ──
+    const resizeImage = (file, maxDim = 800, quality = 0.82) =>
+        new Promise((resolve, reject) => {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+                const w = Math.round(img.width * scale);
+                const h = Math.round(img.height * scale);
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob(blob => blob ? resolve(new File([blob], file.name, { type: 'image/jpeg' })) : reject(new Error('Resize failed')), 'image/jpeg', quality);
+            };
+            img.onerror = reject;
+            img.src = url;
+        });
+
     // ── Photo Handling ──
     const handlePhotoUpload = async (e) => {
         const files = Array.from(e.target.files || []);
@@ -178,8 +198,11 @@ export default function Management() {
                 let downloadURL;
                 let ipfsHash = null;
 
-                // 1. Upload to Express backend
-                downloadURL = await uploadFile(file, 'profile');
+                // 1. Resize to max 800×800 so upload stays under 2MB → stored as base64 in DB
+                const resized = await resizeImage(file).catch(() => file);
+
+                // 2. Upload to Express backend
+                downloadURL = await uploadFile(resized, 'profile');
 
                 // 2. Upload to IPFS (IPFS Storage)
                 const ipfsResult = await uploadToIPFS(file);

@@ -56,16 +56,10 @@ export default function ChatLobby() {
                                 onClick={() => {
                                     if (!room.active) return;
 
-                                    // SECURITY GATE: Require identity verification
-                                    if (!user?.is_verified) {
-                                        toast.warning('Debes verificar tu identidad antes de entrar al chat.');
-                                        navigate('/verify', { state: { from: '/chat' } });
-                                        return;
-                                    }
-
-                                    // GENDER GATE: Strict enforcement — no exceptions
-                                    if (room.gender && user?.gender && room.gender !== user.gender.toLowerCase()) {
-                                        toast.error(`Esta sala es exclusiva para ${room.gender === 'female' ? 'mujeres' : 'hombres'}.`);
+                                    // GENDER GATE: user must have completed selfie verification
+                                    if (!user?.gender_verified) {
+                                        toast.warning('Debes verificar tu identidad primero. Ve a Community → sala privada para verificar.');
+                                        navigate('/community/' + room.id);
                                         return;
                                     }
 

@@ -9,7 +9,7 @@ router.get('/me', requireAuth, async (req, res) => {
     const { rows } = await db.query(
       `SELECT u.id, u.name, u.username, u.avatar_url, u.bio, u.is_paid, u.is_verified,
               u.is_verified_web3, u.safety_score, u.location, u.created_at, u.last_seen, u.settings,
-              dp.gender
+              dp.gender, dp.gender_verified
        FROM users u
        LEFT JOIN dating_profiles dp ON dp.user_id = u.id
        WHERE u.id = $1`,
