@@ -655,46 +655,73 @@ export default function CommunityRoom() {
 
             {/* Gender Selection Modal */}
             {genderModalOpen && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white dark:bg-[#1a1525] rounded-3xl p-6 shadow-2xl max-w-sm w-full border border-gray-200 dark:border-white/10">
-                        <div className="text-center mb-6">
-                            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                                <span className="material-icons text-3xl text-primary">diversity_3</span>
+                <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0 bg-black/70 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1a1525] rounded-3xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-white/10 overflow-hidden">
+                        {/* Header */}
+                        <div className="px-6 pt-6 pb-4 text-center">
+                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center mx-auto mb-4 text-2xl">
+                                🔒
                             </div>
-                            <h2 className="text-xl font-bold mb-2">Complete Profile</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                                To ensure a safe and private environment, we need to know your gender to assign you to the correct room.
+                            <h2 className="text-lg font-bold text-slate-900 dark:text-white">One quick step</h2>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                                We use your gender to place you in the right community room and keep the space safe.
                             </p>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        {/* Options */}
+                        <div className="px-4 pb-3 space-y-2.5">
                             <button
                                 onClick={() => handleGenderUpdate('female')}
-                                className="flex flex-col items-center gap-3 p-4 rounded-2xl border-2 border-transparent bg-pink-50 dark:bg-pink-500/10 hover:border-pink-500 transition-all group"
+                                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-transparent bg-pink-50 dark:bg-pink-500/10 hover:border-pink-400 hover:bg-pink-100 dark:hover:bg-pink-500/20 active:scale-[0.98] transition-all group"
                             >
-                                <div className="w-10 h-10 rounded-full bg-pink-100 dark:bg-pink-500/20 text-pink-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                    <span className="material-icons">female</span>
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-2xl shadow-md shadow-pink-500/30 group-hover:scale-105 transition-transform flex-shrink-0">
+                                    👩
                                 </div>
-                                <span className="font-semibold text-sm">Female</span>
+                                <div className="text-left">
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm">Female</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Women's community rooms</p>
+                                </div>
+                                <span className="material-icons text-pink-400 opacity-0 group-hover:opacity-100 ml-auto transition-opacity text-lg">arrow_forward</span>
                             </button>
 
                             <button
                                 onClick={() => handleGenderUpdate('male')}
-                                className="flex flex-col items-center gap-3 p-4 rounded-2xl border-2 border-transparent bg-blue-50 dark:bg-blue-500/10 hover:border-blue-500 transition-all group"
+                                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-transparent bg-blue-50 dark:bg-blue-500/10 hover:border-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 active:scale-[0.98] transition-all group"
                             >
-                                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                    <span className="material-icons">male</span>
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-2xl shadow-md shadow-blue-500/30 group-hover:scale-105 transition-transform flex-shrink-0">
+                                    👨
                                 </div>
-                                <span className="font-semibold text-sm">Male</span>
+                                <div className="text-left">
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm">Male</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Men's community rooms</p>
+                                </div>
+                                <span className="material-icons text-blue-400 opacity-0 group-hover:opacity-100 ml-auto transition-opacity text-lg">arrow_forward</span>
+                            </button>
+
+                            <button
+                                onClick={() => handleGenderUpdate('other')}
+                                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-transparent bg-purple-50 dark:bg-purple-500/10 hover:border-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 active:scale-[0.98] transition-all group"
+                            >
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-fuchsia-500 flex items-center justify-center text-2xl shadow-md shadow-purple-500/30 group-hover:scale-105 transition-transform flex-shrink-0">
+                                    ✨
+                                </div>
+                                <div className="text-left">
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm">Non-binary / Other</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">All-inclusive rooms</p>
+                                </div>
+                                <span className="material-icons text-purple-400 opacity-0 group-hover:opacity-100 ml-auto transition-opacity text-lg">arrow_forward</span>
                             </button>
                         </div>
 
-                        <button
-                            onClick={() => navigate('/community')}
-                            className="w-full mt-6 py-2 text-xs text-gray-400 font-medium hover:text-gray-600 dark:hover:text-gray-200"
-                        >
-                            Cancel and go back
-                        </button>
+                        {/* Footer */}
+                        <div className="px-4 pt-1 pb-5 text-center">
+                            <button
+                                onClick={() => navigate('/community')}
+                                className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors py-2 px-4"
+                            >
+                                Skip for now
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
