@@ -87,6 +87,70 @@ router.patch('/me', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/users/verify-gender — AI gender verification using profile photo
+// Runs DeepFace on the user's avatar, compares with declared gender in dating_profiles.
+// On success sets gender_verified = true in dating_profiles.
+router.post('/verify-gender', requireAuth, async (req, res) => {
+  const { spawn } = require('child_process');
+  const path = require('path');
+
+  const photoUrl = req.user.avatar_url || req.user.photo_url;
+  if (!photoUrl) {
+    return res.status(400).json({ error: 'No profile photo found. Please upload a profile photo first.' });
+  }
+
+  // Get declared gender from dating_profiles
+  const { rows: dpRows } = await db.query(
+    'SELECT gender FROM dating_profiles WHERE user_id = $1',
+    [req.user.id]
+  );
+  const declaredGender = dpRows[0]?.gender;
+  if (!declaredGender) {
+    return res.status(400).json({ error: 'Gender not set. Please select your gender first.' });
+  }
+
+  // Run Python verify_gender.py
+  const scriptPath = path.join(__dirname, '..', 'python', 'verify_gender.py');
+  const result = await new Promise((resolve) => {
+    const py = spawn('python3', [scriptPath, photoUrl, declaredGender], { env: process.env });
+    let out = '', err = '';
+    py.stdout.on('data', d => { out += d.toString(); });
+    py.stderr.on('data', d => { err += d.toString(); });
+    py.on('error', () => resolve({ error: 'Python script not found' }));
+    py.on('close', () => {
+      try { resolve(JSON.parse(out)); }
+      catch { resolve({ error: err || 'Script returned no output' }); }
+    });
+  });
+
+  if (result.error) {
+    return res.status(422).json({ error: result.error, confidence: result.confidence });
+  }
+
+  if (!result.match) {
+    return res.status(403).json({
+      error: `Photo appears to show a ${result.detected} person, but your declared gender is ${declaredGender}. Please use a clear selfie photo.`,
+      detected: result.detected,
+      confidence: result.confidence
+    });
+  }
+
+  // Verification passed — update dating_profiles
+  await db.query(
+    `UPDATE dating_profiles
+     SET gender_verified = TRUE, gender_verified_at = NOW(), gender_confidence = $1
+     WHERE user_id = $2`,
+    [result.confidence, req.user.id]
+  );
+
+  res.json({
+    ok: true,
+    detected: result.detected,
+    confidence: result.confidence,
+    message: 'Gender verified successfully'
+  });
+});
+
 // POST /api/users/avatar — upload avatar photo
 router.post('/avatar', requireAuth, upload.single('file'), async (req, res) => {
   try {

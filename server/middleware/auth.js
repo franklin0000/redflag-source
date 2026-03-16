@@ -13,7 +13,7 @@ function signRefreshToken(userId) {
 
 // Shared query: load user + gender from dating_profiles in one call
 const USER_WITH_GENDER_QUERY = `
-  SELECT u.*, dp.gender
+  SELECT u.*, dp.gender, dp.gender_verified
   FROM users u
   LEFT JOIN dating_profiles dp ON dp.user_id = u.id
   WHERE u.id = $1

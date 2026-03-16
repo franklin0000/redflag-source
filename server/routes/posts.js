@@ -21,11 +21,12 @@ function roomAccessDenied(user, roomId) {
   if (!required) return null; // no restriction (mixed/general)
   if (!user) return 'Login required to access this room';
   const g = normalizeGender(user.gender);
-  if (!g) return 'Please set your gender in your profile to access this room';
+  if (!g) return 'gender_not_set';
   if (g !== required) {
     const label = required === 'female' ? 'women' : 'men';
     return `This room is for ${label} only`;
   }
+  if (!user.gender_verified) return 'gender_not_verified';
   return null;
 }
 

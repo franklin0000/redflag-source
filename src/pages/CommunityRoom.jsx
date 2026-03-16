@@ -72,6 +72,9 @@ export default function CommunityRoom() {
 
     const [myReactions, setMyReactions] = useState({});
     const [genderModalOpen, setGenderModalOpen] = useState(false);
+    const [verifyModalOpen, setVerifyModalOpen] = useState(false);
+    const [verifying, setVerifying] = useState(false);
+    const [verifyError, setVerifyError] = useState(null);
 
     // Mapper to match UI expectations
     const mapPosts = (data) => {
@@ -184,23 +187,25 @@ export default function CommunityRoom() {
 
         const requiredGender = restrictions[roomId];
         if (requiredGender) {
-            // Normalize gender (handles Spanish terms + 'other')
-            let userGender = (user.gender || user.user_metadata?.gender || '').toLowerCase().trim();
+            // Normalize gender
+            let userGender = (user.gender || '').toLowerCase().trim();
             if (userGender === 'mujer') userGender = 'female';
             if (userGender === 'hombre') userGender = 'male';
 
+            // Step 1 — no gender set → show selection modal
             if (!userGender) {
                 setGenderModalOpen(true);
                 return;
             }
 
-            // Non-binary/other → redirect to mixed room
+            // Step 2 — non-binary → redirect to mixed room
             if (userGender === 'other' || userGender === 'non-binary') {
                 toast.info('Este room es privado. Te redirigimos al Community Hub.');
                 navigate('/community/mixed');
                 return;
             }
 
+            // Step 3 — wrong gender → blocked
             if (userGender !== requiredGender) {
                 const label = requiredGender === 'female' ? 'mujeres' : 'hombres';
                 toast.error(`Acceso restringido: Esta sala es solo para ${label}.`);
@@ -208,7 +213,13 @@ export default function CommunityRoom() {
                 return;
             }
 
-            // Gender matches — no extra verification needed
+            // Step 4 — correct gender but not verified → show AI verification
+            if (!user.gender_verified) {
+                setVerifyModalOpen(true);
+                return;
+            }
+
+            // ✅ Gender matches and verified — access granted
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, roomId, room, navigate]);
@@ -342,6 +353,32 @@ export default function CommunityRoom() {
     };
 
     const totalReactions = (r) => Object.values(r || {}).reduce((a, b) => a + b, 0);
+
+    const handleVerifyGender = async () => {
+        setVerifying(true);
+        setVerifyError(null);
+        try {
+            const res = await fetch('/api/users/verify-gender', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setVerifyError(data.error || 'Verification failed');
+            } else {
+                setVerifyModalOpen(false);
+                toast.success('¡Identidad verificada! Bienvenida/o.');
+                window.location.reload();
+            }
+        } catch (e) {
+            setVerifyError('Network error. Please try again.');
+        } finally {
+            setVerifying(false);
+        }
+    };
 
     const handleGenderUpdate = async (gender) => {
         // Assuming updateProfile is available via context or prop, but it's not imported here
@@ -649,6 +686,82 @@ export default function CommunityRoom() {
                                     Post
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Gender Verification Modal */}
+            {verifyModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0 bg-black/70 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1a1525] rounded-3xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-white/10 overflow-hidden">
+                        <div className="px-6 pt-6 pb-4 text-center">
+                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500/20 to-primary/20 flex items-center justify-center mx-auto mb-4 text-2xl">
+                                🔍
+                            </div>
+                            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Verificación de identidad</h2>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                                Para proteger este espacio privado, verificamos tu identidad con IA usando tu foto de perfil. Solo toma un segundo.
+                            </p>
+                        </div>
+
+                        {/* Profile photo preview */}
+                        <div className="flex justify-center pb-2">
+                            {user?.avatar_url ? (
+                                <div className="relative">
+                                    <img
+                                        src={user.avatar_url}
+                                        alt="Tu foto"
+                                        className="w-24 h-24 rounded-2xl object-cover border-4 border-violet-200 dark:border-violet-800/40 shadow-lg"
+                                    />
+                                    <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-violet-500 flex items-center justify-center text-white text-xs">
+                                        <span className="material-icons text-sm">face</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="w-24 h-24 rounded-2xl bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-600">
+                                    <span className="material-icons text-3xl text-slate-400">add_a_photo</span>
+                                    <p className="text-[9px] text-slate-400 mt-1">No photo</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {!user?.avatar_url && (
+                            <p className="text-center text-xs text-orange-500 px-6 pb-2">
+                                Necesitas una foto de perfil para verificar. Ve a tu perfil y agrega una.
+                            </p>
+                        )}
+
+                        {verifyError && (
+                            <div className="mx-4 mb-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+                                <p className="text-xs text-red-600 dark:text-red-400 text-center">{verifyError}</p>
+                            </div>
+                        )}
+
+                        <div className="px-4 pb-5 space-y-2.5">
+                            <button
+                                onClick={handleVerifyGender}
+                                disabled={verifying || !user?.avatar_url}
+                                className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-violet-600 to-primary text-white font-bold rounded-2xl shadow-lg disabled:opacity-50 active:scale-[0.98] transition-all"
+                            >
+                                {verifying ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                                        Analizando foto...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-icons text-sm">verified_user</span>
+                                        Verificar con IA
+                                    </>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => navigate('/community')}
+                                className="w-full text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors py-2"
+                            >
+                                Volver al Community Hub
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -115,6 +115,11 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS room_id TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_type TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_name TEXT;
 
+-- Gender verification for gender-restricted community rooms
+ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS gender_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS gender_verified_at TIMESTAMPTZ;
+ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS gender_confidence NUMERIC(5,2);
+
 -- Location flags (RedFlagMap) — in case schema.sql wasn't run fresh
 CREATE TABLE IF NOT EXISTS location_flags (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
