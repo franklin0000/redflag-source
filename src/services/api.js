@@ -190,6 +190,8 @@ export const searchesApi = {
     if (username) formData.append('username', username);
     return request('/api/searches/background-check', { method: 'POST', body: formData });
   },
+  dorksSearch: (name, username) =>
+    request('/api/searches/dorks', { method: 'POST', body: JSON.stringify({ name, username }) }),
 };
 
 // ── STATS ──────────────────────────────────────────────────────

@@ -10,6 +10,12 @@ from insightface.app import FaceAnalysis
 from PIL import Image
 from PIL.ExifTags import TAGS
 
+try:
+    import imagehash
+    HAS_IMAGEHASH = True
+except ImportError:
+    HAS_IMAGEHASH = False
+
 INDEX_FILE = 'face_index.faiss'
 METADATA_FILE = 'metadata.pkl'
 THRESHOLD = 0.35
@@ -161,6 +167,16 @@ def extract_metadata(image_path):
         pass
     return meta
 
+def compute_phash(image_path):
+    """Computa el perceptual hash de la imagen para detectar copias modificadas."""
+    if not HAS_IMAGEHASH:
+        return None
+    try:
+        img_pil = Image.open(image_path)
+        return str(imagehash.phash(img_pil))
+    except:
+        return None
+
 def generate_dorks(name=None, username=None):
     """Genera Google Dorks basados en el nombre o usuario."""
     dorks = []
@@ -295,7 +311,8 @@ def scan_face(image_path, username=None):
 
     # 4. OSINT & Metadata
     file_metadata = extract_metadata(image_path)
-    osint_links = generate_dorks(name=result.get("metadata", {}).get("nombre"), username=username) 
+    osint_links = generate_dorks(name=result.get("metadata", {}).get("nombre"), username=username)
+    phash_val = compute_phash(image_path)
 
     final_response = {
         "ok": True,
@@ -304,6 +321,7 @@ def scan_face(image_path, username=None):
         "cloud_results": cloud_results,
         "osint_results": osint_links,
         "file_metadata": file_metadata,
+        "phash": phash_val,
         "api_debug": api_error if api_error else "Yandex Vision OK"
     }
 

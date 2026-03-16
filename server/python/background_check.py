@@ -3,6 +3,8 @@ import json
 import os
 import subprocess
 import time
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 def process_scanner(img_path, username=None):
     try:
@@ -69,7 +71,11 @@ def process_scanner(img_path, username=None):
 
             # 5. File Metadata (Information Section)
             meta = res.get("file_metadata", {})
-            if meta:
+            phash = res.get("phash")
+            if meta or phash:
+                details = dict(meta) if meta else {}
+                if phash:
+                    details["phash"] = phash
                 results.append({
                     "score": 0,
                     "url": "#",
@@ -78,7 +84,8 @@ def process_scanner(img_path, username=None):
                     "icon": "info",
                     "isRisk": False,
                     "isTargetedSearch": False,
-                    "details": meta
+                    "details": details,
+                    "phash": phash
                 })
 
         # ALWAYS PROVIDE A FALLBACK if no direct matches found
@@ -168,25 +175,81 @@ def mock_sherlock_matches(username):
         }
     ]
 
+def run_maigret(username):
+    """Runs Maigret for richer social media OSINT (bio, photo, tags per profile)."""
+    if not username:
+        return []
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.json', delete=False, mode='w') as f:
+            tmpfile = f.name
+
+        subprocess.run(
+            ['python3', '-m', 'maigret', username, '--json', tmpfile, '--timeout', '8', '--no-color'],
+            capture_output=True, text=True, timeout=40
+        )
+
+        with open(tmpfile, 'r') as f:
+            data = json.load(f)
+        os.unlink(tmpfile)
+
+        results = []
+        for site, info in data.items():
+            status = info.get('status', {})
+            if isinstance(status, dict) and status.get('status') in ('Claimed', 'Found'):
+                extra = {}
+                if info.get('bio'):
+                    extra['bio'] = info['bio']
+                if info.get('photo'):
+                    extra['photoUrl'] = info['photo']
+                if info.get('tags'):
+                    extra['tags'] = info['tags']
+                extra['source'] = 'Maigret'
+                results.append({
+                    "score": 88,
+                    "url": info.get('url', ''),
+                    "group": "Social Media",
+                    "title": f"[Maigret] {site}",
+                    "icon": "manage_accounts",
+                    "isRisk": True,
+                    "isTargetedSearch": False,
+                    "extra": extra
+                })
+        return results
+    except Exception as e:
+        print(f"Maigret error: {e}", file=sys.stderr)
+        return []
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({"error": "Missing image path"}))
         sys.exit(1)
-        
+
     img_path = sys.argv[1]
     username_query = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "undefined" else None
-    
+
     face_results = []
     sherlock_results = []
-    
+    maigret_results = []
+
     if img_path and img_path != "none":
         face_results = process_scanner(img_path, username=username_query)
-        
+
     if username_query:
-        sherlock_results = process_sherlock(username_query)
-        
-    combined = face_results + sherlock_results
-    
+        # Run Sherlock and Maigret in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sherlock_future = executor.submit(process_sherlock, username_query)
+            maigret_future = executor.submit(run_maigret, username_query)
+            try:
+                sherlock_results = sherlock_future.result(timeout=20)
+            except Exception:
+                sherlock_results = []
+            try:
+                maigret_results = maigret_future.result(timeout=45)
+            except Exception:
+                maigret_results = []
+
+    combined = face_results + sherlock_results + maigret_results
+
     print(json.dumps({
         "status": "success",
         "results": combined

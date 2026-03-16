@@ -1,0 +1,9 @@
+insightface
+faiss-cpu
+opencv-python-headless
+Pillow
+imagehash
+maigret
+deepface
+requests
+numpy
