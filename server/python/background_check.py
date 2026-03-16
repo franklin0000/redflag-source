@@ -175,6 +175,34 @@ def mock_sherlock_matches(username):
         }
     ]
 
+def process_local_db(img_path):
+    """Searches the local db_images/ face database using DeepFace.find()."""
+    if not img_path or img_path == "none":
+        return []
+    try:
+        from find_in_db import find_face_in_db
+        matches = find_face_in_db(img_path)
+        results = []
+        for m in matches:
+            results.append({
+                "score": m["score"],
+                "url": "#",
+                "group": "Local DB Match",
+                "title": f"DB Match: {m['name']} ({m['score']}% confidence)",
+                "icon": "person_search",
+                "isRisk": True,
+                "isTargetedSearch": False,
+                "details": {
+                    "name": m["name"],
+                    "distance": m["distance"],
+                    "images_in_db": m.get("total_images_in_folder", 0)
+                }
+            })
+        return results
+    except Exception as e:
+        print(f"Local DB search error: {e}", file=sys.stderr)
+        return []
+
 def run_maigret(username):
     """Runs Maigret for richer social media OSINT (bio, photo, tags per profile)."""
     if not username:
@@ -228,11 +256,23 @@ if __name__ == "__main__":
     username_query = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "undefined" else None
 
     face_results = []
+    db_results = []
     sherlock_results = []
     maigret_results = []
 
     if img_path and img_path != "none":
-        face_results = process_scanner(img_path, username=username_query)
+        # Run scanner and local DB search in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            scanner_future = executor.submit(process_scanner, img_path, username_query)
+            db_future = executor.submit(process_local_db, img_path)
+            try:
+                face_results = scanner_future.result(timeout=90)
+            except Exception:
+                face_results = []
+            try:
+                db_results = db_future.result(timeout=120)
+            except Exception:
+                db_results = []
 
     if username_query:
         # Run Sherlock and Maigret in parallel
@@ -248,7 +288,7 @@ if __name__ == "__main__":
             except Exception:
                 maigret_results = []
 
-    combined = face_results + sherlock_results + maigret_results
+    combined = db_results + face_results + sherlock_results + maigret_results
 
     print(json.dumps({
         "status": "success",
