@@ -65,8 +65,7 @@ def yandex_cloud_search(image_path, face_crop_bytes=None):
     Si se pasa face_crop_bytes, lo usa en lugar del archivo original.
     """
     if not YANDEX_KEY:
-        print("Yandex Cloud Error: No API Key", file=sys.stderr)
-        return None
+        return None, "Missing Yandex API Key in Environment Variables"
     
     import base64
     try:
@@ -94,15 +93,13 @@ def yandex_cloud_search(image_path, face_crop_bytes=None):
         }
         
         response = requests.post(url, headers=headers, json=payload, timeout=15)
-        print(f"Yandex Cloud Status: {response.status_code}", file=sys.stderr)
         if response.status_code == 200:
-            data = response.json()
-            return data
+            return response.json(), None
         else:
-            print(f"Yandex Cloud Response Error: {response.text}", file=sys.stderr)
+            err_msg = f"Yandex Error {response.status_code}: {response.text}"
+            return None, err_msg
     except Exception as e:
-        print(f"Yandex Cloud Error Exception: {e}", file=sys.stderr)
-    return None
+        return None, str(e)
 
 def scan_face(image_path):
     """
@@ -166,11 +163,11 @@ def scan_face(image_path):
     # 3. Búsqueda local
     result = search_local(emb)
     
-    # 4. Búsqueda en la nube (Yandex Vision) - Solo si no hay match local
     cloud_results = []
+    api_error = None
     if not result["match"]:
         # USAR EL RECORTE DE LA CARA para la búsqueda en la nube
-        cloud_data = yandex_cloud_search(image_path, face_crop_bytes=face_crop_bytes)
+        cloud_data, api_error = yandex_cloud_search(image_path, face_crop_bytes=face_crop_bytes)
         if cloud_data:
             # Extraer resultados de IMAGE_COPY_SEARCH
             for res in cloud_data.get("results", []):
@@ -196,7 +193,8 @@ def scan_face(image_path):
         "ok": True,
         "local_match": result["match"],
         "attributes": attributes,
-        "cloud_results": cloud_results
+        "cloud_results": cloud_results,
+        "api_debug": api_error if api_error else "Yandex Vision OK"
     }
 
     if result["match"]:

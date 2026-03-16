@@ -10,8 +10,10 @@ def process_scanner(img_path):
         res = scan_face(img_path)
         
         results = []
-        if res.get("ok"):
-            # 1. Local Match (Highest Priority)
+        is_ok = res.get("ok", False)
+        
+        if is_ok:
+            # 1. Local Match (Emerald Section: Face Match)
             if res.get("local_match"):
                 results.append({
                     "score": round((1 - res.get("distance", 0)) * 100, 2),
@@ -24,32 +26,47 @@ def process_scanner(img_path):
                     "attributes": res.get("attributes", {})
                 })
             
-            # 2. Cloud Search Results from Yandex Vision API
+            # 2. Cloud Search (Emerald Section: Visual Match)
             cloud_hits = res.get("cloud_results", [])
             for hit in cloud_hits:
                 results.append({
-                    "score": 90, # High confidence if found in cloud
+                    "score": 95,
                     "url": hit.get("page_url"),
-                    "group": "Cloud Search",
-                    "title": f"Public Profile Found (Yandex Vision)",
-                    "icon": "cloud_done",
+                    "group": "Visual Match",
+                    "title": f"Public Profile Found (Yandex)",
+                    "icon": "travel_explore",
                     "isRisk": True,
                     "isTargetedSearch": False,
-                    "thumbnail": hit.get("url")
+                    "imgSrc": hit.get("url")
                 })
 
-            # 3. Yandex Web Fallback (If no results)
-            if not results and res.get("web_search_url"):
+            # 3. API Error Info (Digital Footprint)
+            api_debug = res.get("api_debug")
+            if api_debug and api_debug != "Yandex Vision OK":
                 results.append({
                     "score": 0,
-                    "url": res.get("web_search_url"),
-                    "group": "Web Search",
-                    "title": "Abriendo búsqueda profunda en Yandex...",
-                    "icon": "travel_explore",
+                    "url": "#",
+                    "group": "System Debug",
+                    "title": f"API Status: {api_debug}",
+                    "icon": "bug_report",
                     "isRisk": False,
-                    "isTargetedSearch": True,
-                    "openNow": True
+                    "isTargetedSearch": False
                 })
+
+        # ALWAYS PROVIDE A FALLBACK if no direct matches found
+        if not results:
+            yandex_url = res.get("web_search_url") if is_ok else f"https://yandex.com/images/search?rpt=imageview&url=manual"
+            results.append({
+                "score": 0,
+                "url": yandex_url,
+                "group": "Deep Search",
+                "title": "Búsqueda Profunda en Internet",
+                "icon": "travel_explore",
+                "isRisk": False,
+                "isTargetedSearch": True,
+                "openNow": True
+            })
+            
         return results if results else []
     except Exception as e:
         print(f"Error in scanner: {e}", file=sys.stderr)
