@@ -87,8 +87,13 @@ def yandex_cloud_search(image_path):
         }
         
         response = requests.post(url, headers=headers, json=payload, timeout=10)
+        print(f"Yandex Cloud Status: {response.status_code}", file=sys.stderr)
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            # print(f"Yandex Cloud Data: {json.dumps(data)}", file=sys.stderr) # Too verbose, leave commented
+            return data
+        else:
+            print(f"Yandex Cloud Response: {response.text}", file=sys.stderr)
     except Exception as e:
         print(f"Yandex Cloud Error: {e}", file=sys.stderr)
     return None
