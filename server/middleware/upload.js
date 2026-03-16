@@ -70,11 +70,21 @@ async function uploadToCloudinary(filePath, folder) {
 async function resolveFileUrl(req, fieldName) {
   if (!req.file) return;
   const folder = req.body?.folder || 'media';
+
   if (process.env.CLOUDINARY_CLOUD_NAME) {
+    // Cloudinary configured — upload for a permanent CDN URL
     const cdnUrl = await uploadToCloudinary(req.file.path, folder);
     req.fileUrl = cdnUrl || `${BASE_URL}/api/files/${req.file.filename}`;
     if (cdnUrl) fs.unlink(req.file.path, () => {});
+  } else if (req.file.mimetype.startsWith('image/') && req.file.size <= 2 * 1024 * 1024) {
+    // No Cloudinary + small image → store as base64 data URL directly in DB.
+    // This survives Render /tmp wipes since the data lives in PostgreSQL.
+    const buf = fs.readFileSync(req.file.path);
+    fs.unlink(req.file.path, () => {});
+    req.fileUrl = `data:${req.file.mimetype};base64,${buf.toString('base64')}`;
   } else {
+    // Large file or non-image (video/audio/doc) — use ephemeral local URL.
+    // Note: this will break after a Render restart. Configure Cloudinary for persistence.
     req.fileUrl = `${BASE_URL}/api/files/${req.file.filename}`;
   }
 }
