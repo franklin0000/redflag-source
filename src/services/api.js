@@ -184,9 +184,10 @@ export const searchesApi = {
   getCount: () => request('/api/searches/count'),
   create: (query, results) =>
     request('/api/searches', { method: 'POST', body: JSON.stringify({ query, results }) }),
-  backgroundCheck: (file) => {
+  backgroundCheck: (file, username = '') => {
     const formData = new FormData();
     formData.append('file', file);
+    if (username) formData.append('username', username);
     return request('/api/searches/background-check', { method: 'POST', body: formData });
   },
 };

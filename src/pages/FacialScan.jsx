@@ -69,8 +69,8 @@ export default function FacialScan() {
                 setStatus('Deploying RedFlag detection neural nets...');
                 setProgress(50);
 
-                const { runLocalScan } = await import('../services/scannerService');
-                const scanRes = await runLocalScan(file);
+                const { searchesApi } = await import('../services/api');
+                const scanRes = await searchesApi.backgroundCheck(file);
 
                 if (scanRes.error) {
                     throw new Error(scanRes.error || 'Local scan failed.');
