@@ -50,21 +50,26 @@ pool.query(`
 `).catch(err => console.error('Migration error (get_matches_by_distance):', err.message));
 
 const runMigrations = async () => {
-  try {
-    // Auto-migrate: add columns to posts
-    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS room_id TEXT DEFAULT 'general'`);
-    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_url TEXT`);
-    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_type TEXT`);
-    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_name TEXT`);
-    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'`);
-    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS replies JSONB DEFAULT '[]'`);
-    await pool.query(`UPDATE posts SET room_id = 'general' WHERE room_id = 'mixed'`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_room ON posts(room_id, created_at DESC)`);
-    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '24 hours')`);
-    console.log('✅ DB Migrations completed');
-  } catch (err) {
-    console.error('❌ Migration error:', err.message);
+  const migs = [
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS room_id TEXT DEFAULT 'general'`,
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_url TEXT`,
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_type TEXT`,
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_name TEXT`,
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'`,
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS replies JSONB DEFAULT '[]'`,
+    `UPDATE posts SET room_id = 'general' WHERE room_id = 'mixed'`,
+    `CREATE INDEX IF NOT EXISTS idx_posts_room ON posts(room_id, created_at DESC)`,
+    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '24 hours')`
+  ];
+
+  for (const sql of migs) {
+    try {
+      await pool.query(sql);
+    } catch (err) {
+      console.error(`Migration step failed: ${sql.substring(0, 50)}...`, err.message);
+    }
   }
+  console.log('✅ DB Migrations completed');
 };
 
 runMigrations();

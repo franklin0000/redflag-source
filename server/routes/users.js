@@ -81,7 +81,18 @@ router.patch('/me', requireAuth, async (req, res) => {
         [req.user.id, gender]
       ).catch(() => {});
     }
-    res.json(rows[0]);
+    // Return the updated user with gender and verification status
+    const { rows: updatedRows } = await db.query(
+      `SELECT u.id, u.name, u.username, u.avatar_url, u.bio, u.is_paid, u.is_verified,
+              u.is_verified_web3, u.safety_score, u.location, u.lat, u.lng, u.email, 
+              u.wallet_address, u.created_at, u.last_seen, u.settings,
+              dp.gender, dp.gender_verified
+       FROM users u
+       LEFT JOIN dating_profiles dp ON dp.user_id = u.id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+    res.json(updatedRows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -148,11 +159,23 @@ router.post('/verify-gender', requireAuth, (req, res, next) => {
     [req.user.id]
   );
 
+  // Return updated user profile
+  const { rows: updatedRows } = await db.query(
+    `SELECT u.id, u.name, u.username, u.avatar_url, u.bio, u.is_paid, u.is_verified,
+            u.is_verified_web3, u.safety_score, u.location, u.created_at, u.last_seen, u.settings,
+            dp.gender, dp.gender_verified
+     FROM users u
+     LEFT JOIN dating_profiles dp ON dp.user_id = u.id
+     WHERE u.id = $1`,
+    [req.user.id]
+  );
+
   res.json({
     ok: true,
     detected: declaredGender,
     confidence: 100,
-    message: 'Identity verified successfully'
+    message: 'Identity verified successfully',
+    user: updatedRows[0]
   });
 });
 
