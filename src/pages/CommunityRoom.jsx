@@ -89,6 +89,9 @@ export default function CommunityRoom() {
         return data.map(p => {
             const defaultReactions = { '❤️': 0, '👏': 0, '😢': 0, '😡': 0 };
             const rawReplies = Array.isArray(p.replies) ? p.replies : [];
+            // Robust roomId matching
+            const pRoomId = p.room_id || p.roomId || roomId;
+            
             return {
                 id: p.id,
                 userId: p.user_id,
@@ -96,6 +99,7 @@ export default function CommunityRoom() {
                 userAvatar: p.user?.photo_url || p.avatar_url || null,
                 initials: (p.user?.name || p.name || 'AN').substring(0, 2).toUpperCase(),
                 content: p.content || '',
+                roomId: pRoomId,
                 mediaUrl: p.media_url || null,
                 mediaType: p.media_type || null,
                 mediaName: p.media_name || null,
@@ -339,7 +343,9 @@ export default function CommunityRoom() {
                 }
             }
 
+            console.log(`Creating post in room: ${roomId}`, { content: optimisticPost.content, mediaUrl, fileType });
             const data = await postsApi.createPost(optimisticPost.content, mediaUrl, roomId, fileType, fileName);
+            console.log("Post creation response:", data);
 
             // 2. Replace Optimistic Post with Real Post
             const realPost = mapPosts([{ ...data, room_id: roomId, media_type: fileType, media_name: fileName }])[0];
