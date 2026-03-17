@@ -204,8 +204,12 @@ export default function DatingChat() {
         // Messages
         const unsubscribeMessages = subscribeToMessages(matchId, (msgs) => {
             setMessages(msgs);
-            markMatchRead(matchId); // clear unread badge as messages load
-            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            markMatchRead(matchId);
+            setTimeout(() => {
+                if (messagesEndRef.current) {
+                    messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, 100);
         });
 
         // Calls

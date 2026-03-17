@@ -81,7 +81,16 @@ export function subscribeToAnonMessages(room, callback) {
   };
   s.on('new_anon_message', handler);
 
-  return () => s.off('new_anon_message', handler);
+  // Listen for initial history
+  const historyHandler = (history) => {
+    callback(history);
+  };
+  s.on('anon_history', historyHandler);
+
+  return () => {
+    s.off('new_anon_message', handler);
+    s.off('anon_history', historyHandler);
+  };
 }
 
 export async function sendAnonMessage(room, text, nickname, avatar, attachment = null, type = 'text') {

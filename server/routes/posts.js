@@ -120,7 +120,11 @@ router.post('/:id/react', requireAuth, async (req, res) => {
       [emoji, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Post not found' });
-    res.json({ reactions: rows[0].reactions });
+    const reactions = rows[0].reactions;
+    res.json({ reactions });
+    
+    // Broadcast reaction change
+    getIO()?.to(`community:${postRows[0].room_id}`).emit('post_reaction_updated', { postId: req.params.id, reactions });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -151,6 +155,9 @@ router.post('/:id/reply', requireAuth, async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Post not found' });
     res.json({ reply });
+
+    // Broadcast reply
+    getIO()?.to(`community:${postRows[0].room_id}`).emit('post_reply_added', { postId: req.params.id, reply });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -259,13 +259,18 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
        VALUES ($1,$2,$3,$4) RETURNING *`,
       [matchId, req.user.id, content, iv || null]
     );
+    const message = rows[0];
 
     await db.query(
       `UPDATE matches SET last_message=$1, last_message_at=NOW() WHERE id=$2`,
       [content.substring(0, 100), matchId]
     );
 
-    res.status(201).json(rows[0]);
+    // Broadcast to Socket.io so recipients see it in real-time
+    const { getIO } = require('../ioRef');
+    getIO()?.to(`match:${matchId}`).emit('new_message', { ...message, match_id: matchId, room_id: req.params.matchId });
+
+    res.status(201).json(message);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

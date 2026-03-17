@@ -18,7 +18,7 @@ export function connectSocket() {
 
   socket = io(BASE, {
     auth: { token: getToken() },
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
     reconnectionAttempts: 10,
     reconnectionDelay: 2000,
   });
