@@ -7,16 +7,6 @@
 const MAPBOX_TOKEN  = import.meta.env.VITE_MAPBOX_TOKEN;
 const API_BASE      = import.meta.env.VITE_API_URL || '';
 
-// Foursquare category id → app type label
-const FSQ_CATEGORY_TYPE = {
-  13032: 'cafe', 13034: 'cafe',
-  13065: 'restaurant',
-  13003: 'bar',
-  10024: 'cinema',
-  10027: 'museum',
-  12071: 'library',
-  16032: 'park',  16020: 'public', 16000: 'park',
-};
 
 // Category → safety baseline score
 const CATEGORY_SAFETY = {
@@ -53,23 +43,6 @@ const FALLBACK_PHOTOS = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function fsqPhotoUrl(photo, w = 400, h = 250) {
-  if (!photo?.prefix || !photo?.suffix) return null;
-  return `${photo.prefix}${w}x${h}${photo.suffix}`;
-}
-
-function getType(categories = []) {
-  for (const cat of categories) {
-    const t = FSQ_CATEGORY_TYPE[cat.id];
-    if (t) return t;
-    // Check parent IDs
-    const parentId = Math.floor(cat.id / 1000) * 1000;
-    const pt = FSQ_CATEGORY_TYPE[parentId];
-    if (pt) return pt;
-  }
-  return 'public';
-}
 
 function deriveVibes(type, categories = [], keyword = '') {
   const vibes = [];
@@ -114,57 +87,6 @@ async function searchFoursquare(lat, lng, type = 'all', keyword = '') {
   return data.results || [];
 }
 
-function transformFsqPlace(place, idx, userLat, userLng, keyword) {
-  const geo    = place.geocodes?.main || {};
-  const placeLat = geo.latitude;
-  const placeLng = geo.longitude;
-  const type   = getType(place.categories || []);
-  const photo  = place.photos?.[0];
-  const photoUrl = fsqPhotoUrl(photo) || (FALLBACK_PHOTOS[type] || FALLBACK_PHOTOS.public)[idx % 2];
-
-  const rating10   = place.rating     || 7.0;
-  const rating5    = parseFloat((rating10 / 2).toFixed(1));
-  const popularity = place.popularity || 0;
-  const reviews    = place.stats?.total_ratings || Math.floor(popularity * 0.8) || 50;
-
-  const priceMap = { 1: '$', 2: '$$', 3: '$$$', 4: '$$$$' };
-  const priceRange = priceMap[place.price] || '$$';
-
-  const openNow  = place.hours?.open_now ?? true;
-  const hours    = place.hours?.regular;
-  const todayIdx = new Date().getDay(); // 0=Sun
-  const todayHours = hours?.find(h => h.day === (todayIdx === 0 ? 7 : todayIdx));
-  const closingTime = todayHours?.close ? `${todayHours.close.slice(0,2)}:${todayHours.close.slice(2)}` : 'Check Details';
-
-  const address = [
-    place.location?.address,
-    place.location?.locality || place.location?.city,
-  ].filter(Boolean).join(', ') || 'Address unavailable';
-
-  const dist = (placeLat && placeLng) ? distKm(userLat, userLng, placeLat, placeLng) : null;
-
-  return {
-    id:          place.fsq_id || `fsq_${idx}`,
-    name:        place.name,
-    type,
-    rating:      rating5,
-    reviews,
-    address,
-    lat:         placeLat || userLat + 0.001 * idx,
-    lng:         placeLng || userLng + 0.001 * idx,
-    image:       photoUrl,
-    safetyScore: calcSafetyScore(type, rating10, popularity),
-    priceRange,
-    busyNow:     popularity > 50,
-    features:    CATEGORY_FEATURES[type] || ['Public Space'],
-    vibe:        deriveVibes(type, place.categories || [], keyword),
-    openNow,
-    closingTime,
-    distance:    dist,
-    source:      'foursquare',
-  };
-}
-
 // ── Mapbox Fallback ────────────────────────────────────────────────────────
 
 async function searchMapbox(lat, lng, type = 'cafe', keyword = '') {
@@ -206,16 +128,12 @@ async function searchMapbox(lat, lng, type = 'cafe', keyword = '') {
 
 export const placesService = {
   searchSafePlaces: async (lat, lng, type = 'all', keyword = '') => {
-    // 1. Try server proxy → Foursquare (real data, no CORS)
+    // 1. Try server proxy → Google Places (pre-normalized, no CORS)
     try {
-      const raw = await searchFoursquare(lat, lng, type, keyword);
-      if (raw.length > 0) {
-        return raw
-          .map((p, i) => transformFsqPlace(p, i, lat, lng, keyword))
-          .sort((a, b) => (b.safetyScore - a.safetyScore));
-      }
+      const results = await searchFoursquare(lat, lng, type, keyword);
+      if (results.length > 0) return results;
     } catch (err) {
-      console.warn('Foursquare proxy failed, trying Mapbox fallback:', err.message);
+      console.warn('Places proxy failed, trying Mapbox fallback:', err.message);
     }
 
     // 2. Mapbox fallback
