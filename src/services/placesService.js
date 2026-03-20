@@ -79,7 +79,7 @@ function distKm(lat1, lng1, lat2, lng2) {
 // ── Foursquare Search (via server proxy — no CORS issues) ─────────────────
 
 async function searchFoursquare(lat, lng, type = 'all', keyword = '') {
-  const params = new URLSearchParams({ lat, lng, type, keyword, radius: '3000', limit: '50' });
+  const params = new URLSearchParams({ lat, lng, type, keyword, radius: '5000', limit: '60' });
   const res = await fetch(`${API_BASE}/api/places/search?${params}`);
   if (!res.ok) throw new Error(`Places API ${res.status}`);
   const data = await res.json();
@@ -92,7 +92,7 @@ async function searchFoursquare(lat, lng, type = 'all', keyword = '') {
 async function searchMapbox(lat, lng, type = 'cafe', keyword = '') {
   if (!MAPBOX_TOKEN) throw new Error('MAPBOX_TOKEN missing');
   const query = keyword ? `${keyword} ${type}` : type;
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?proximity=${lng},${lat}&types=poi&access_token=${MAPBOX_TOKEN}&limit=20`;
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?proximity=${lng},${lat}&types=poi&access_token=${MAPBOX_TOKEN}&limit=50`;
   const res  = await fetch(url);
   if (!res.ok) throw new Error('Mapbox API Error');
   const data = await res.json();

@@ -160,13 +160,18 @@ function transformPlace(place, idx, userLat, userLng, keyword) {
 
 // GET /api/places/search?lat=&lng=&type=&keyword=&radius=&limit=
 router.get('/search', async (req, res) => {
-  const { lat, lng, type = 'all', keyword = '', radius = '3000', limit = '50' } = req.query;
+  const { lat, lng, type = 'all', keyword = '', radius = '5000', limit = '60' } = req.query;
 
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng are required', results: [] });
   if (!GOOGLE_KEY)  return res.status(503).json({ error: 'Google Maps API key not configured', results: [] });
 
-  const googleType  = TYPE_MAP[type];
-  const googleKw    = VIBE_KEYWORDS[keyword] || (keyword || '');
+  let googleType  = TYPE_MAP[type];
+  let googleKw    = VIBE_KEYWORDS[keyword] || (keyword || '');
+
+  // If type is 'all' and no keyword, use a broad set of dating-friendly types
+  if (type === 'all' && !googleKw) {
+    googleKw = 'restaurant|cafe|bar|park|cinema|museum|point_of_interest';
+  }
 
   const params = new URLSearchParams({
     location: `${lat},${lng}`,
@@ -185,8 +190,17 @@ router.get('/search', async (req, res) => {
       return res.status(502).json({ error: `Google: ${data.status}`, results: [] });
     }
 
-    const raw     = (data.results || []).slice(0, Number(limit));
-    const results = raw.map((p, i) => transformPlace(p, i, Number(lat), Number(lng), keyword));
+    let rawResults = data.results || [];
+
+    // If we have fewer than 20 results and a next_page_token, we could fetch more.
+    // However, Nearby Search usually returns 20 per page. 
+    // For a smoother UI, we'll stick to one broad request for now, 
+    // but the broad 'googleKw' for 'all' should significantly increase variety.
+
+    const results = rawResults
+      .slice(0, Number(limit))
+      .map((p, i) => transformPlace(p, i, Number(lat), Number(lng), keyword));
+    
     results.sort((a, b) => b.safetyScore - a.safetyScore);
 
     res.json({ results });

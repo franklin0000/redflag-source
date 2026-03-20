@@ -50,6 +50,8 @@ services:
         sync: false
       - key: TWILIO_PHONE_NUMBER
         sync: false
+      - key: VITE_FOURSQUARE_API_KEY
+        sync: false
     headers:
       - path: /assets/*
         name: Cache-Control
