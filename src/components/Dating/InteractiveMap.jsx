@@ -361,9 +361,46 @@ export default function InteractiveMap({ center, places, onPlaceSelect }) {
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-xs text-gray-600 mt-1.5 truncate">{selectedPlace.address}</p>
+                                    {/* Address + distance row */}
+                                    <div className="flex items-center gap-1.5 mt-1.5">
+                                        <span className="material-icons text-gray-600 text-xs">place</span>
+                                        <p className="text-xs text-gray-500 truncate flex-1">{selectedPlace.address}</p>
+                                        {selectedPlace.distance != null && (
+                                            <span className="text-[10px] text-primary font-bold shrink-0 bg-primary/10 px-1.5 py-0.5 rounded-full">
+                                                {selectedPlace.distance} km
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Hours row */}
+                                    {selectedPlace.closingTime && selectedPlace.closingTime !== 'Check Details' && (
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <span className="material-icons text-gray-600 text-xs">schedule</span>
+                                            <p className="text-[10px] text-gray-500 truncate">{selectedPlace.closingTime}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
+
+                            {/* Phone + Website quick actions */}
+                            {(selectedPlace.phone || selectedPlace.website) && (
+                                <div className="flex gap-2 mb-4">
+                                    {selectedPlace.phone && (
+                                        <a href={`tel:${selectedPlace.phone}`}
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-green-900/30 border border-green-500/20 rounded-xl text-green-400 text-xs font-bold hover:bg-green-900/50 transition-colors">
+                                            <span className="material-icons text-sm">call</span>
+                                            {selectedPlace.phone}
+                                        </a>
+                                    )}
+                                    {selectedPlace.website && (
+                                        <a href={selectedPlace.website} target="_blank" rel="noopener noreferrer"
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-900/30 border border-blue-500/20 rounded-xl text-blue-400 text-xs font-bold hover:bg-blue-900/50 transition-colors truncate">
+                                            <span className="material-icons text-sm">language</span>
+                                            Website
+                                        </a>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Safety score bar */}
                             {selectedPlace.safetyScore !== undefined && (
@@ -404,11 +441,11 @@ export default function InteractiveMap({ center, places, onPlaceSelect }) {
                                 </div>
                             )}
 
-                            {/* Feature chips */}
+                            {/* Feature chips — all of them */}
                             {selectedPlace.features?.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 mb-5">
-                                    {selectedPlace.features.slice(0, 4).map(f => (
-                                        <span key={f} className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                                    {selectedPlace.features.map(f => (
+                                        <span key={f} className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/8">
                                             ✓ {f}
                                         </span>
                                     ))}

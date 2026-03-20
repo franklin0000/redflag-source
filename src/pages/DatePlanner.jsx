@@ -486,35 +486,116 @@ export default function DatePlanner() {
                 <div className="px-4 space-y-4">
                     {filteredPlaces.map(place => (
                         <div key={place.id} className="bg-white dark:bg-[#2d1b2a] rounded-2xl overflow-hidden border border-gray-100 dark:border-white/5 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="h-32 w-full relative">
-                                <img src={place.image} alt={place.name} className="w-full h-full object-cover" />
-                                <div className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                            {/* Photo */}
+                            <div className="h-36 w-full relative">
+                                <img src={place.image} alt={place.name} className="w-full h-full object-cover"
+                                    onError={e => { e.target.src = 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=400&q=80'; }} />
+                                {/* Safety badge */}
+                                <div className="absolute top-2 left-2 bg-green-500/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                                     <span className="material-icons text-[10px]">shield</span>
                                     {place.safetyScore}% SAFE
                                 </div>
+                                {/* Open/Closed badge */}
+                                <div className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1 ${place.openNow ? 'bg-emerald-900/80 text-emerald-300' : 'bg-red-900/80 text-red-300'}`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
+                                    {place.openNow ? 'Open' : 'Closed'}
+                                </div>
+                                {/* Busy badge */}
+                                {place.busyNow && (
+                                    <div className="absolute bottom-2 left-2 bg-orange-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">
+                                        🔥 Popular Now
+                                    </div>
+                                )}
                             </div>
+
                             <div className="p-4">
+                                {/* Name + rating */}
                                 <div className="flex justify-between items-start mb-1">
-                                    <h3 className="font-bold text-gray-900 dark:text-white text-lg">{place.name}</h3>
-                                    <div className="flex items-center gap-0.5 text-yellow-500">
-                                        <span className="text-sm font-bold">{place.rating}</span>
-                                        <span className="material-icons text-sm">star</span>
+                                    <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight flex-1 mr-2">{place.name}</h3>
+                                    <div className="flex flex-col items-end shrink-0">
+                                        <div className="flex items-center gap-0.5 text-yellow-500">
+                                            <span className="text-sm font-bold">{place.rating}</span>
+                                            <span className="material-icons text-sm">star</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">{place.reviews} reviews</span>
                                     </div>
                                 </div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{place.address} • {place.distance}km</p>
 
-                                <div className="flex flex-wrap gap-1.5 mb-4">
+                                {/* Address + distance */}
+                                <div className="flex items-center gap-1 mb-1">
+                                    <span className="material-icons text-gray-400 text-xs">place</span>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 flex-1 truncate">{place.address}</p>
+                                    {place.distance != null && (
+                                        <span className="text-[10px] text-primary font-bold shrink-0">{place.distance} km</span>
+                                    )}
+                                </div>
+
+                                {/* Hours + price row */}
+                                <div className="flex items-center gap-3 mb-3">
+                                    {place.priceRange && (
+                                        <span className="text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded-full">{place.priceRange}</span>
+                                    )}
+                                    {place.closingTime && place.closingTime !== 'Check Details' && (
+                                        <div className="flex items-center gap-1">
+                                            <span className="material-icons text-gray-400 text-xs">schedule</span>
+                                            <span className="text-[10px] text-gray-400 truncate max-w-[140px]">{place.closingTime}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* First Date Score */}
+                                {(() => {
+                                    const fds = Math.min(99, Math.round((place.safetyScore || 80) * 0.4 + ((place.rating || 3.5) / 5) * 100 * 0.35 + ({cafe:15,restaurant:12,park:10,cinema:10,museum:8,library:6,bar:3,public:7}[place.type]||5)));
+                                    const color = fds >= 85 ? '#a855f7' : fds >= 70 ? '#f59e0b' : '#6b7280';
+                                    const label = fds >= 85 ? 'Perfect ✨' : fds >= 70 ? 'Great 👍' : fds >= 55 ? 'Decent' : 'Risky';
+                                    return (
+                                        <div className="flex items-center gap-2 mb-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-800/20 rounded-lg px-2.5 py-1.5">
+                                            <span className="text-xs">💑</span>
+                                            <span className="text-[10px] text-gray-500 dark:text-gray-400">First Date Score</span>
+                                            <div className="flex-1 h-1 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                                <div className="h-1 rounded-full" style={{ width: `${fds}%`, backgroundColor: color }} />
+                                            </div>
+                                            <span className="text-[10px] font-black shrink-0" style={{ color }}>{fds}/99 · {label}</span>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Vibe + feature tags */}
+                                <div className="flex flex-wrap gap-1.5 mb-3">
                                     {(place.vibe || []).map((v, i) => (
-                                        <span key={`v-${i}`} className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 text-[10px] font-bold border border-purple-200 dark:border-purple-800/30">
+                                        <span key={`v-${i}`} className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 text-[10px] font-bold">
                                             {v}
                                         </span>
                                     ))}
-                                    {place.features.map((feat, i) => (
-                                        <span key={i} className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-[10px] font-medium border border-gray-200 dark:border-white/5">
-                                            {feat}
+                                    {(place.features || []).map((feat, i) => (
+                                        <span key={i} className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/8 text-gray-500 dark:text-gray-400 text-[10px]">
+                                            ✓ {feat}
                                         </span>
                                     ))}
                                 </div>
+
+                                {/* Phone + Website */}
+                                {(place.phone || place.website) && (
+                                    <div className="flex gap-2 mb-3">
+                                        {place.phone && (
+                                            <a href={`tel:${place.phone}`} className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2.5 py-1 rounded-lg border border-green-200 dark:border-green-800/30 font-medium">
+                                                <span className="material-icons text-xs">call</span>
+                                                {place.phone}
+                                            </a>
+                                        )}
+                                        {place.website && (
+                                            <a href={place.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800/30 font-medium">
+                                                <span className="material-icons text-xs">language</span>
+                                                Website
+                                            </a>
+                                        )}
+                                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`} target="_blank" rel="noopener noreferrer"
+                                            className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-white/8 px-2.5 py-1 rounded-lg border border-gray-200 dark:border-white/8 font-medium">
+                                            <span className="material-icons text-xs">directions</span>
+                                            Directions
+                                        </a>
+                                    </div>
+                                )}
 
                                 <button
                                     onClick={() => handleConfirmDate(place)}
