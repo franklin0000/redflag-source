@@ -152,7 +152,7 @@ export default function DatePlanner() {
                 // 2. Fetch Places
                 // Map selected filters to API params
                 // If selectedVibe is set, use it as keyword. If selectedCategory is not 'all', use it as type.
-                const type = selectedCategory !== 'all' ? selectedCategory : 'point_of_interest';
+                const type = selectedCategory !== 'all' ? selectedCategory : 'all';
                 const keyword = searchQuery || selectedVibe || '';
 
                 // Search around the newly found coordinates (searchLoc)
@@ -426,16 +426,27 @@ export default function DatePlanner() {
 
             {/* Category Filters */}
             <div className="flex items-center gap-2 px-4 py-4 overflow-x-auto no-scrollbar">
-                {['all', 'cafe', 'restaurant', 'public'].map(cat => (
+                {[
+                    { id: 'all',        label: 'All',        icon: '🌐' },
+                    { id: 'cafe',       label: 'Cafe',       icon: '☕' },
+                    { id: 'restaurant', label: 'Restaurant', icon: '🍽️' },
+                    { id: 'bar',        label: 'Bar',        icon: '🍸' },
+                    { id: 'park',       label: 'Park',       icon: '🌳' },
+                    { id: 'cinema',     label: 'Cinema',     icon: '🎬' },
+                    { id: 'museum',     label: 'Museum',     icon: '🏛️' },
+                    { id: 'library',    label: 'Library',    icon: '📚' },
+                    { id: 'public',     label: 'Public',     icon: '🏙️' },
+                ].map(cat => (
                     <button
-                        key={cat}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${selectedCategory === cat
+                        key={cat.id}
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${selectedCategory === cat.id
                             ? 'bg-primary text-white shadow-lg shadow-primary/30'
                             : 'bg-white dark:bg-white/5 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-white/10'
                             }`}
                     >
-                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        <span>{cat.icon}</span>
+                        {cat.label}
                     </button>
                 ))}
             </div>

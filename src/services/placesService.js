@@ -10,12 +10,15 @@ const FSQ_BASE      = 'https://api.foursquare.com/v3/places';
 
 // ── Foursquare Category IDs ────────────────────────────────────────────────
 const CATEGORY_IDS = {
-  cafe:       '13032,13034',                   // Café, Coffee Shop
-  restaurant: '13065',                         // Restaurant (all types)
-  public:     '16032,16020,10027,12071',        // Park, Public Square, Museum, Library
-  bar:        '13003',                         // Bar
-  cinema:     '10024',                         // Movie Theater
-  all:        '13032,13034,13065,16032,13003,10024,10027,16020',
+  cafe:       '13032,13034',                        // Café, Coffee Shop
+  restaurant: '13065',                              // Restaurant (all types)
+  bar:        '13003',                              // Bar
+  cinema:     '10024',                              // Movie Theater
+  museum:     '10027',                              // Museum
+  library:    '12071',                              // Library
+  park:       '16032,16000,16058',                  // Park, National Park, Botanical Garden
+  public:     '16020,16032',                        // Public Square, Plaza
+  all:        '13032,13034,13065,16032,13003,10024,10027,16020,12071,16000',
 };
 
 // Vibe → best-fit Foursquare categories
