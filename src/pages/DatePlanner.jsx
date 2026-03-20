@@ -536,7 +536,7 @@ export default function DatePlanner() {
 
             {/* Map View */}
             {viewMode === 'map' && !loading && (
-                <div className="px-4" style={{ height: '500px' }}>
+                <div className="px-4" style={{ height: '70vh', minHeight: '480px' }}>
                     <InteractiveMap
                         center={mapCenter}
                         places={filteredPlaces}

@@ -142,8 +142,8 @@ async function searchFoursquare(lat, lng, type = 'all', keyword = '') {
 
   const params = new URLSearchParams({
     ll:         `${lat},${lng}`,
-    radius:     '2000',
-    limit:      '20',
+    radius:     '3000',
+    limit:      '50',
     categories,
     fields:     'fsq_id,name,geocodes,location,categories,photos,rating,price,hours,popularity,stats',
     ...(keyword && !VIBE_CATEGORIES[keyword] ? { query: keyword } : {}),

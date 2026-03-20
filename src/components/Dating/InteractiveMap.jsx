@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Map, { Marker, Layer, NavigationControl } from 'react-map-gl/mapbox';
 // eslint-disable-next-line no-unused-vars
 import { AnimatePresence, motion } from 'framer-motion';
@@ -15,6 +15,9 @@ const CATEGORIES = [
     { id: 'park',       emoji: '🌿', label: 'Parks'     },
     { id: 'bar',        emoji: '🍸', label: 'Bar'       },
     { id: 'cinema',     emoji: '🎬', label: 'Cinema'    },
+    { id: 'museum',     emoji: '🏛️', label: 'Museum'    },
+    { id: 'library',    emoji: '📚', label: 'Library'   },
+    { id: 'public',     emoji: '🏙️', label: 'Public'    },
 ];
 
 const TYPE_COLOR = {
@@ -23,11 +26,14 @@ const TYPE_COLOR = {
     park:       '#22c55e',
     bar:        '#8b5cf6',
     cinema:     '#3b82f6',
+    museum:     '#06b6d4',
+    library:    '#10b981',
     public:     '#d411b4',
 };
 
 const TYPE_EMOJI = {
-    cafe: '☕', restaurant: '🍽️', park: '🌿', bar: '🍸', cinema: '🎬', public: '🏛️',
+    cafe: '☕', restaurant: '🍽️', park: '🌿', bar: '🍸',
+    cinema: '🎬', museum: '🏛️', library: '📚', public: '🏙️',
 };
 
 // 3D buildings layer spec (uses composite source from dark-v11 style)
@@ -48,6 +54,15 @@ const BUILDINGS_LAYER = {
 
 function getColor(type) { return TYPE_COLOR[type] || '#d411b4'; }
 function getEmoji(type) { return TYPE_EMOJI[type] || '📍'; }
+
+// First Date Score: safety + rating + type bonus
+function calcFirstDateScore(place) {
+    const safetyW  = (place.safetyScore || 80) * 0.4;
+    const ratingW  = ((place.rating   || 3.5) / 5) * 100 * 0.35;
+    const typeBonus = { cafe: 15, restaurant: 12, park: 10, cinema: 10, museum: 8, library: 6, bar: 3, public: 7 };
+    const bonus    = typeBonus[place.type] || 5;
+    return Math.min(99, Math.round(safetyW + ratingW + bonus));
+}
 
 function SafetyBar({ score }) {
     const pct   = Math.min(100, Math.max(0, score));
@@ -352,10 +367,31 @@ export default function InteractiveMap({ center, places, onPlaceSelect }) {
 
                             {/* Safety score bar */}
                             {selectedPlace.safetyScore !== undefined && (
-                                <div className="mb-4">
+                                <div className="mb-3">
                                     <SafetyBar score={selectedPlace.safetyScore} />
                                 </div>
                             )}
+
+                            {/* First Date Score */}
+                            {(() => {
+                                const fds = calcFirstDateScore(selectedPlace);
+                                const color = fds >= 80 ? '#a855f7' : fds >= 60 ? '#f59e0b' : '#6b7280';
+                                const label = fds >= 85 ? 'Perfect ✨' : fds >= 70 ? 'Great 👍' : fds >= 55 ? 'Decent' : 'Risky';
+                                return (
+                                    <div className="mb-4 bg-purple-950/40 border border-purple-500/20 rounded-xl px-3 py-2.5">
+                                        <div className="flex justify-between items-center text-xs mb-1.5">
+                                            <span className="text-gray-400 font-medium">💑 First Date Score</span>
+                                            <span className="font-black text-sm" style={{ color }}>{fds}/99 · {label}</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                                            <div
+                                                className="h-1.5 rounded-full transition-all duration-700"
+                                                style={{ width: `${fds}%`, backgroundColor: color }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Vibe tags */}
                             {selectedPlace.vibe?.length > 0 && (
