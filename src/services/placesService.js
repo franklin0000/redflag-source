@@ -1,40 +1,11 @@
 /**
- * Places Service — Foursquare v3 + Mapbox fallback
- * Primary: Foursquare Places API (real photos, ratings, hours, price)
- * Fallback: Mapbox Geocoding API (if Foursquare unavailable)
+ * Places Service — Server proxy → Foursquare v3 + Mapbox fallback
+ * Primary: /api/places/search (server proxies Foursquare, no CORS issues)
+ * Fallback: Mapbox Geocoding API (if server unavailable)
  */
 
-const FSQ_KEY       = import.meta.env.VITE_FOURSQUARE_API_KEY;
 const MAPBOX_TOKEN  = import.meta.env.VITE_MAPBOX_TOKEN;
-const FSQ_BASE      = 'https://api.foursquare.com/v3/places';
-
-// ── Foursquare Category IDs ────────────────────────────────────────────────
-const CATEGORY_IDS = {
-  cafe:       '13032,13034',                        // Café, Coffee Shop
-  restaurant: '13065',                              // Restaurant (all types)
-  bar:        '13003',                              // Bar
-  cinema:     '10024',                              // Movie Theater
-  museum:     '10027',                              // Museum
-  library:    '12071',                              // Library
-  park:       '16032,16000,16058',                  // Park, National Park, Botanical Garden
-  public:     '16020,16032',                        // Public Square, Plaza
-  all:        '13032,13034,13065,16032,13003,10024,10027,16020,12071,16000',
-};
-
-// Vibe → best-fit Foursquare categories
-const VIBE_CATEGORIES = {
-  'Coffee':       '13032,13034',
-  'Dinner':       '13065',
-  'Romantic':     '13065,13032',
-  'Lively':       '13003,10032',
-  'Quiet':        '13032,12071',
-  'Public Space': '16020,16032',
-  'Study':        '12071,13032',
-  'Outdoors':     '16032,16000,16058',
-  'Casual':       '13032,13065',
-  'First Date':   '13032,10024,10027',
-  'Quick Meet':   '13032,13034',
-};
+const API_BASE      = import.meta.env.VITE_API_URL || '';
 
 // Foursquare category id → app type label
 const FSQ_CATEGORY_TYPE = {
@@ -132,29 +103,14 @@ function distKm(lat1, lng1, lat2, lng2) {
   return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
 }
 
-// ── Foursquare Search ──────────────────────────────────────────────────────
+// ── Foursquare Search (via server proxy — no CORS issues) ─────────────────
 
 async function searchFoursquare(lat, lng, type = 'all', keyword = '') {
-  if (!FSQ_KEY) throw new Error('FSQ_KEY missing');
-
-  // Determine categories — vibe takes priority over type filter
-  const categories = VIBE_CATEGORIES[keyword] || CATEGORY_IDS[type] || CATEGORY_IDS.all;
-
-  const params = new URLSearchParams({
-    ll:         `${lat},${lng}`,
-    radius:     '3000',
-    limit:      '50',
-    categories,
-    fields:     'fsq_id,name,geocodes,location,categories,photos,rating,price,hours,popularity,stats',
-    ...(keyword && !VIBE_CATEGORIES[keyword] ? { query: keyword } : {}),
-  });
-
-  const res = await fetch(`${FSQ_BASE}/search?${params}`, {
-    headers: { Authorization: FSQ_KEY, Accept: 'application/json' },
-  });
-
-  if (!res.ok) throw new Error(`Foursquare ${res.status}: ${await res.text()}`);
+  const params = new URLSearchParams({ lat, lng, type, keyword, radius: '3000', limit: '50' });
+  const res = await fetch(`${API_BASE}/api/places/search?${params}`);
+  if (!res.ok) throw new Error(`Places API ${res.status}`);
   const data = await res.json();
+  if (data.error) throw new Error(data.error);
   return data.results || [];
 }
 

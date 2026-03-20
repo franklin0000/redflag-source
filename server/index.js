@@ -168,6 +168,7 @@ const safetyRouter = require('./routes/safety');
 app.use('/api/safety', safetyRouter);
 app.use('/api/twilio', require('./routes/twilio'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/places', require('./routes/places'));
 
 // ── File Upload (any route) ───────────────────────────────────
 const upload = require('./middleware/upload');
