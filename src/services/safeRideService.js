@@ -74,6 +74,19 @@ export const safeRideService = {
     });
   },
 
+  // Reset pickup so receiver can re-enter their address
+  resetPickup: async (session_id) => {
+    return apiFetch(`/api/saferide/${session_id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        pickup_address: null,
+        pickup_lat: null,
+        pickup_lng: null,
+        status: 'requested',
+      }),
+    });
+  },
+
   // Called when receiver taps "Open Uber"
   confirmUberOpened: async (session_id) => {
     return apiFetch(`/api/saferide/${session_id}`, {

@@ -255,7 +255,7 @@ export default function SafeRideTracker() {
 
                         {/* Change address option */}
                         <button
-                            onClick={() => { setPickupCoords(null); safeRideService.acceptRide(sessionId, '', null, null).then(() => {}).catch(() => {}); }}
+                            onClick={() => { setPickupCoords(null); setPickupInput(''); safeRideService.resetPickup(sessionId).catch(() => {}); }}
                             className="mt-4 text-xs text-gray-500 hover:text-gray-300 underline"
                         >
                             Change pickup address
