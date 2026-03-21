@@ -59,7 +59,7 @@ export default function SafeRideTracker() {
                  [Math.max(...lngs) + pad, Math.max(...lats) + pad]],
                 { padding: 60, duration: 800 }
             );
-        } catch {}
+        } catch { /* map not ready yet */ }
     }, [ride]);
 
     // ── GPS sharing: receiver starts sharing when en_route ────────────────
