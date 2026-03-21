@@ -105,17 +105,30 @@ export default function SafeRideTracker() {
         const pCoords = pickupCoords || (ride?.pickup_lat ? { lat: ride.pickup_lat, lng: ride.pickup_lng, address: ride.pickup_address } : null);
         if (!pCoords || !ride) return;
 
-        const uberUrl = safeRideService.getUberDeepLink(
+        const webUrl = safeRideService.getUberDeepLink(
             pCoords.lat, pCoords.lng, pCoords.address,
             ride.dest_lat, ride.dest_lng, ride.dest_name, ride.dest_address
         );
 
-        // Mark as en_route so the sender's map updates
-        safeRideService.confirmUberOpened(sessionId);
+        // Native URI scheme — opens the installed Uber app with info pre-filled
+        // (same params as the web URL, just different scheme prefix)
+        const nativeUrl = webUrl.replace('https://m.uber.com/ul/', 'uber://');
 
-        // Open Uber (mobile: opens app; desktop: opens m.uber.com)
-        window.open(uberUrl, '_blank', 'noopener');
-        toast.success('Uber opened! Complete your booking in the Uber app.');
+        safeRideService.confirmUberOpened(sessionId);
+        toast.success('Opening Uber...');
+
+        // Strategy: try native app first; if page loses focus the app opened.
+        // If still focused after 1.2s, Uber not installed → open web fallback.
+        let appOpened = false;
+        const onBlur = () => { appOpened = true; };
+        window.addEventListener('blur', onBlur, { once: true });
+
+        window.location.href = nativeUrl;
+
+        setTimeout(() => {
+            window.removeEventListener('blur', onBlur);
+            if (!appOpened) window.open(webUrl, '_blank', 'noopener');
+        }, 1200);
     };
 
     // ── Loading / not found ───────────────────────────────────────────────
