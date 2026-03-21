@@ -1,38 +1,21 @@
 /**
- * Places Proxy — OpenStreetMap Overpass API
+ * Places Proxy — Yelp Fusion (primary, free 500/day) + OpenStreetMap Overpass (fallback)
  * Returns ALL nearby businesses: food, entertainment, nature, culture, services
+ *
+ * Yelp: real ratings, real photos, real reviews, real hours
+ * OSM:  unlimited, no key needed, but pseudo ratings + Unsplash photos
+ *
+ * Set YELP_API_KEY on Render to enable Yelp. Otherwise falls back to OSM automatically.
  */
 const express = require('express');
 const fetch   = require('node-fetch');
 const router  = express.Router();
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const YELP_API_KEY  = process.env.YELP_API_KEY;
+const YELP_BASE     = 'https://api.yelp.com/v3/businesses/search';
+const OVERPASS_URL  = 'https://overpass-api.de/api/interpreter';
 
-// ── Full OSM tag → app type mapping ──────────────────────────────────────
-const OSM_TYPE_MAP = {
-  // Food & Drink
-  cafe: 'cafe', coffee_shop: 'cafe', tea_house: 'cafe', juice_bar: 'cafe',
-  restaurant: 'restaurant', fast_food: 'restaurant', food_court: 'restaurant',
-  ice_cream: 'restaurant', dessert: 'restaurant', bakery: 'restaurant',
-  bar: 'bar', pub: 'bar', biergarten: 'bar', nightclub: 'bar', lounge: 'bar',
-  // Entertainment
-  cinema: 'cinema', theatre: 'cinema', arts_centre: 'cinema',
-  escape_game: 'cinema', bowling_alley: 'cinema', casino: 'cinema',
-  // Culture
-  museum: 'museum', gallery: 'museum', exhibition_centre: 'museum',
-  aquarium: 'museum', planetarium: 'museum', historic: 'museum',
-  // Knowledge
-  library: 'library', book_store: 'library',
-  // Nature & Outdoors
-  park: 'park', garden: 'park', nature_reserve: 'park',
-  beach: 'park', viewpoint: 'park', playground: 'park',
-  // Public Spaces
-  marketplace: 'public', community_centre: 'public', plaza: 'public',
-  town_hall: 'public', fountain: 'public', square: 'public',
-  // Sport & Fitness
-  sports_centre: 'public', stadium: 'public', swimming_pool: 'public',
-  fitness_centre: 'public', yoga: 'public', climbing: 'public',
-};
+// ── Shared type metadata ──────────────────────────────────────────────────
 
 const CATEGORY_SAFETY = {
   cafe: 95, restaurant: 88, bar: 72, cinema: 90,
@@ -61,7 +44,7 @@ const CATEGORY_VIBES = {
   public:     ['Public Space', 'Casual'],
 };
 
-// Multiple fallback images per category for visual variety
+// Fallback images used only when Yelp has no photo (or using OSM)
 const FALLBACK_PHOTOS = {
   cafe: [
     'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400&q=80',
@@ -105,8 +88,171 @@ const FALLBACK_PHOTOS = {
   ],
 };
 
-// ── Vibe → OSM filter ─────────────────────────────────────────────────────
-const VIBE_TAGS = {
+// ── Yelp ──────────────────────────────────────────────────────────────────
+
+// Yelp category aliases for each app type
+const YELP_CATEGORIES = {
+  cafe:       'cafes,coffee,tearooms,juicebars',
+  restaurant: 'restaurants,food',
+  bar:        'bars,pubs,nightlife,wine_bars',
+  cinema:     'movietheaters,bowling,escapegames,casinos,theatres',
+  museum:     'museums,artgalleries,aquariums,planetarium',
+  library:    'libraries',
+  park:       'parks,hiking,beaches,gardens,botanicalgardens',
+  public:     'publicservicesgovt,communitycenters,fitnessstudios,sportclubs,stadiumsarenas',
+};
+
+// Yelp vibe → categories
+const YELP_VIBE_CATEGORIES = {
+  'Coffee':       'cafes,coffee',
+  'Dinner':       'restaurants',
+  'Romantic':     'restaurants,wine_bars',
+  'Lively':       'bars,nightlife,music_venues',
+  'Quiet':        'cafes,libraries',
+  'Public Space': 'parks,gardens',
+  'Study':        'libraries,cafes',
+  'Outdoors':     'parks,hiking,beaches',
+  'Casual':       'restaurants,cafes,bars',
+  'First Date':   'cafes,restaurants,movietheaters',
+  'Quick Meet':   'cafes,coffee,food',
+};
+
+// Map Yelp category alias → app type
+const YELP_TYPE_MAP = {
+  cafes: 'cafe', coffee: 'cafe', tearooms: 'cafe', juicebars: 'cafe',
+  restaurants: 'restaurant', food: 'restaurant', pizza: 'restaurant',
+  burgers: 'restaurant', sandwiches: 'restaurant', sushi: 'restaurant',
+  mexican: 'restaurant', italian: 'restaurant', chinese: 'restaurant',
+  thai: 'restaurant', indian: 'restaurant', seafood: 'restaurant',
+  bars: 'bar', pubs: 'bar', nightlife: 'bar', wine_bars: 'bar',
+  cocktailbars: 'bar', divebars: 'bar', lounges: 'bar', karaoke: 'bar',
+  movietheaters: 'cinema', bowling: 'cinema', escapegames: 'cinema',
+  casinos: 'cinema', theatres: 'cinema', circuses: 'cinema', arcades: 'cinema',
+  museums: 'museum', artgalleries: 'museum', aquariums: 'museum',
+  planetarium: 'museum', sciencemuseums: 'museum', historicalbuildings: 'museum',
+  libraries: 'library',
+  parks: 'park', hiking: 'park', beaches: 'park', gardens: 'park',
+  botanicalgardens: 'park', playgrounds: 'park', skatingrinks: 'park',
+  fitnessstudios: 'public', sportclubs: 'public', stadiumsarenas: 'public',
+  communitycenters: 'public', publicservicesgovt: 'public',
+};
+
+function getYelpType(categories = []) {
+  for (const cat of categories) {
+    const alias = cat.alias?.toLowerCase().replace(/-/g, '_');
+    if (alias && YELP_TYPE_MAP[alias]) return YELP_TYPE_MAP[alias];
+  }
+  return 'restaurant'; // most businesses are food
+}
+
+function distKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
+}
+
+function transformYelp(biz, userLat, userLng, keyword) {
+  if (!biz.name || !biz.coordinates?.latitude || !biz.coordinates?.longitude) return null;
+
+  const type = getYelpType(biz.categories || []);
+  const rating = biz.rating || 4.0;
+  const reviews = biz.review_count || 10;
+
+  const loc = biz.location || {};
+  const addrParts = [loc.address1, loc.city].filter(Boolean);
+  const address = addrParts.join(', ') || 'See map for address';
+
+  // Yelp price: "$", "$$", "$$$", "$$$$" or undefined
+  const priceRange = biz.price || (type === 'park' || type === 'library' ? 'Free' : '$$');
+
+  const openNow = !biz.is_closed;
+
+  // Use real Yelp photo if available, else fallback
+  const photos = FALLBACK_PHOTOS[type] || FALLBACK_PHOTOS.public;
+  const image = biz.image_url || photos[0];
+
+  const vibes = [...(CATEGORY_VIBES[type] || ['Casual'])];
+  const VIBE_KEYS = ['Casual','Romantic','First Date','Quick Meet','Coffee','Study','Lively','Outdoors','Quiet','Dinner','Public Space'];
+  if (keyword && VIBE_KEYS.includes(keyword) && !vibes.includes(keyword)) vibes.unshift(keyword);
+
+  const safetyBase = CATEGORY_SAFETY[type] || 85;
+  const safetyScore = Math.min(99, Math.round(safetyBase + (rating - 3.5) * 4));
+
+  const lat = biz.coordinates.latitude;
+  const lng = biz.coordinates.longitude;
+
+  return {
+    id:          `yelp_${biz.id}`,
+    name:        biz.name,
+    type,
+    rating,
+    reviews,
+    address,
+    lat,
+    lng,
+    image,
+    safetyScore,
+    priceRange,
+    busyNow:     reviews > 150 && openNow,
+    features:    CATEGORY_FEATURES[type] || ['Public Space'],
+    vibe:        [...new Set(vibes)],
+    openNow,
+    closingTime: 'Check Details', // Yelp hours require a separate endpoint
+    distance:    distKm(userLat, userLng, lat, lng),
+    website:     biz.url || null,
+    phone:       biz.display_phone || biz.phone || null,
+    yelpUrl:     biz.url || null,
+    source:      'yelp',
+  };
+}
+
+async function searchYelp(lat, lng, categories, limit, radius) {
+  const params = new URLSearchParams({
+    latitude:   lat,
+    longitude:  lng,
+    radius:     Math.min(Number(radius), 40000), // Yelp max 40km
+    limit:      Math.min(Number(limit), 50),      // Yelp max 50 per call
+    sort_by:    'best_match',
+  });
+  if (categories) params.set('categories', categories);
+
+  const res = await fetch(`${YELP_BASE}?${params}`, {
+    headers: { Authorization: `Bearer ${YELP_API_KEY}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Yelp ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.businesses || [];
+}
+
+// ── OpenStreetMap Overpass (fallback) ─────────────────────────────────────
+
+const OSM_TYPE_MAP = {
+  cafe: 'cafe', coffee_shop: 'cafe', tea_house: 'cafe', juice_bar: 'cafe',
+  restaurant: 'restaurant', fast_food: 'restaurant', food_court: 'restaurant',
+  ice_cream: 'restaurant', dessert: 'restaurant', bakery: 'restaurant',
+  bar: 'bar', pub: 'bar', biergarten: 'bar', nightclub: 'bar', lounge: 'bar',
+  cinema: 'cinema', theatre: 'cinema', arts_centre: 'cinema',
+  escape_game: 'cinema', bowling_alley: 'cinema', casino: 'cinema',
+  museum: 'museum', gallery: 'museum', exhibition_centre: 'museum',
+  aquarium: 'museum', planetarium: 'museum',
+  library: 'library', book_store: 'library',
+  park: 'park', garden: 'park', nature_reserve: 'park',
+  beach: 'park', viewpoint: 'park', playground: 'park',
+  marketplace: 'public', community_centre: 'public', plaza: 'public',
+  town_hall: 'public', fountain: 'public', square: 'public',
+  sports_centre: 'public', stadium: 'public', swimming_pool: 'public',
+  fitness_centre: 'public', yoga: 'public', climbing: 'public',
+};
+
+const VIBE_OSM_TAGS = {
   'Coffee':       { amenity: 'cafe|coffee_shop|tea_house' },
   'Dinner':       { amenity: 'restaurant|fast_food|food_court' },
   'Romantic':     { amenity: 'restaurant|cafe' },
@@ -120,8 +266,7 @@ const VIBE_TAGS = {
   'Quick Meet':   { amenity: 'cafe|coffee_shop|fast_food' },
 };
 
-// ── App type → OSM query tags ─────────────────────────────────────────────
-const TYPE_TAGS = {
+const TYPE_OSM_TAGS = {
   cafe:       { amenity: 'cafe|coffee_shop|tea_house|juice_bar' },
   restaurant: { amenity: 'restaurant|fast_food|food_court|ice_cream|bakery' },
   bar:        { amenity: 'bar|pub|biergarten|nightclub|lounge' },
@@ -132,29 +277,6 @@ const TYPE_TAGS = {
   public:     { amenity: 'marketplace|community_centre|fountain', leisure: 'sports_centre|stadium|fitness_centre' },
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-function distKm(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
-}
-
-function getOsmType(tags) {
-  for (const key of ['amenity', 'leisure', 'tourism', 'shop', 'sport']) {
-    const val = tags[key];
-    if (val) {
-      const t = OSM_TYPE_MAP[val];
-      if (t) return t;
-    }
-  }
-  // Cuisine-based detection
-  if (tags.cuisine) return 'restaurant';
-  return null; // skip unrecognized types
-}
-
 function pseudoRating(id, name = '') {
   const seed = (String(id) + name).split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) & 0xffff, 0);
   return parseFloat((3.5 + (seed % 15) / 10).toFixed(1));
@@ -164,17 +286,26 @@ function pseudoReviews(id) {
   return 30 + (Number(String(id).slice(-3)) || 50);
 }
 
+function getOsmType(tags) {
+  for (const key of ['amenity', 'leisure', 'tourism', 'shop', 'sport']) {
+    const val = tags[key];
+    if (val && OSM_TYPE_MAP[val]) return OSM_TYPE_MAP[val];
+  }
+  if (tags.cuisine) return 'restaurant';
+  return null;
+}
+
 function transformOSM(el, idx, userLat, userLng, keyword) {
   const tags = el.tags || {};
   const name = tags.name || tags['name:en'];
-  if (!name) return null; // skip unnamed
+  if (!name) return null;
 
   const lat = el.lat ?? el.center?.lat;
   const lng = el.lon ?? el.center?.lon;
-  if (!lat || !lng) return null; // skip without coords
+  if (!lat || !lng) return null;
 
   const type = getOsmType(tags);
-  if (!type) return null; // skip unrecognized
+  if (!type) return null;
 
   const rating  = pseudoRating(el.id, name);
   const reviews = pseudoReviews(el.id);
@@ -223,13 +354,11 @@ function transformOSM(el, idx, userLat, userLng, keyword) {
   };
 }
 
-// ── Build broad Overpass QL query ─────────────────────────────────────────
-function buildQuery(lat, lng, radius, typeTags) {
+function buildOsmQuery(lat, lng, radius, typeTags) {
   const around = `(around:${radius},${lat},${lng})`;
   const parts  = [];
 
   if (!typeTags) {
-    // ALL — comprehensive sweep of every dating-relevant category
     const amenities = [
       'cafe','coffee_shop','tea_house','juice_bar',
       'restaurant','fast_food','food_court','ice_cream','bakery',
@@ -253,8 +382,19 @@ function buildQuery(lat, lng, radius, typeTags) {
     }
   }
 
-  // No limit in the query itself — limit server-side after filtering
   return `[out:json][timeout:30];(\n${parts.join('\n')}\n);out body center qt;`;
+}
+
+async function searchOSM(lat, lng, typeTags) {
+  const query = buildOsmQuery(lat, lng, 5000, typeTags);
+  const res = await fetch(OVERPASS_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    `data=${encodeURIComponent(query)}`,
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const data = await res.json();
+  return data.elements || [];
 }
 
 // ── Route ─────────────────────────────────────────────────────────────────
@@ -264,35 +404,41 @@ router.get('/search', async (req, res) => {
 
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng are required', results: [] });
 
-  const typeTags = VIBE_TAGS[keyword] || TYPE_TAGS[type] || null;
-  const query    = buildQuery(lat, lng, radius, typeTags);
+  // ── Attempt 1: Yelp Fusion (real ratings, real photos) ──────────────────
+  if (YELP_API_KEY) {
+    try {
+      const yelpCats = YELP_VIBE_CATEGORIES[keyword] || YELP_CATEGORIES[type] || null;
+      const bizList  = await searchYelp(lat, lng, yelpCats, limit, radius);
 
-  try {
-    const response = await fetch(OVERPASS_URL, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    `data=${encodeURIComponent(query)}`,
-    });
+      if (bizList.length > 0) {
+        const results = bizList
+          .map(b => transformYelp(b, Number(lat), Number(lng), keyword))
+          .filter(Boolean)
+          .sort((a, b) => b.safetyScore - a.safetyScore);
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error('Overpass error:', response.status, text.slice(0, 300));
-      return res.status(502).json({ error: `Overpass ${response.status}`, results: [] });
+        console.log(`[places/yelp] ${type}/${keyword || 'any'} @ ${lat},${lng} → ${bizList.length} raw → ${results.length} results`);
+        return res.json({ results, source: 'yelp' });
+      }
+    } catch (err) {
+      console.warn('[places] Yelp failed, falling back to OSM:', err.message);
     }
+  }
 
-    const data = await response.json();
-    const raw  = data.elements || [];
+  // ── Attempt 2: OpenStreetMap Overpass (free, unlimited) ─────────────────
+  try {
+    const typeTags = VIBE_OSM_TAGS[keyword] || TYPE_OSM_TAGS[type] || null;
+    const raw      = await searchOSM(lat, lng, typeTags);
 
     const results = raw
       .map((el, i) => transformOSM(el, i, Number(lat), Number(lng), keyword))
-      .filter(Boolean)           // remove unnamed / unrecognized
-      .slice(0, Number(limit))   // cap at limit
+      .filter(Boolean)
+      .slice(0, Number(limit))
       .sort((a, b) => b.safetyScore - a.safetyScore);
 
-    console.log(`[places] ${type}/${keyword || 'any'} @ ${lat},${lng} → ${raw.length} raw → ${results.length} results`);
-    res.json({ results });
+    console.log(`[places/osm] ${type}/${keyword || 'any'} @ ${lat},${lng} → ${raw.length} raw → ${results.length} results`);
+    res.json({ results, source: 'openstreetmap' });
   } catch (err) {
-    console.error('Places proxy error:', err.message);
+    console.error('[places] OSM error:', err.message);
     res.status(500).json({ error: err.message, results: [] });
   }
 });
