@@ -361,7 +361,7 @@ export default function SafeRideTracker() {
                             </div>
                         </div>
 
-                        <div className="bg-gray-800 rounded-2xl p-4 flex items-center gap-4">
+                        <div className="bg-gray-800 rounded-2xl p-4 flex items-center gap-4 mb-3">
                             <span className="material-icons text-yellow-400 text-3xl">local_taxi</span>
                             <div className="flex-1">
                                 <p className="font-bold">{ride.dest_name}</p>
@@ -379,8 +379,18 @@ export default function SafeRideTracker() {
                             )}
                         </div>
 
+                        {!isSender && (
+                            <button
+                                onClick={() => safeRideService.markArrived(sessionId)}
+                                className="w-full py-3 bg-green-600 hover:bg-green-700 font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <span className="material-icons">check_circle</span>
+                                I've Arrived!
+                            </button>
+                        )}
+
                         {isSender && (
-                            <p className="text-center text-xs text-gray-500 mt-3">
+                            <p className="text-center text-xs text-gray-500 mt-1">
                                 🔵 Blue dot = your match's live location
                             </p>
                         )}

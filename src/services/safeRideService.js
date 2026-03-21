@@ -87,6 +87,14 @@ export const safeRideService = {
     });
   },
 
+  // Receiver marks the ride as completed
+  markArrived: async (session_id) => {
+    return apiFetch(`/api/saferide/${session_id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'arrived' }),
+    }).catch(() => {});
+  },
+
   // Called when receiver taps "Open Uber"
   confirmUberOpened: async (session_id) => {
     return apiFetch(`/api/saferide/${session_id}`, {
@@ -144,7 +152,9 @@ export const safeRideService = {
           pos.coords.longitude
         );
       },
-      null,
+      (err) => {
+        console.warn('[SafeRide] GPS error:', err.code, err.message);
+      },
       { enableHighAccuracy: true, maximumAge: 15000, timeout: 10000 }
     );
 
@@ -153,19 +163,22 @@ export const safeRideService = {
     };
   },
 
-  // Build Uber deep link with pickup + destination pre-filled
+  // Build Uber deep link with pickup + destination pre-filled.
+  // NOTE: Must build URL manually — URLSearchParams encodes [ and ] to %5B/%5D
+  // which breaks Uber's parser. Uber requires raw bracket notation.
   getUberDeepLink: (pickupLat, pickupLng, pickupAddress, destLat, destLng, destName, destAddress) => {
-    const params = new URLSearchParams({
-      action:                       'setPickup',
-      ...(UBER_CLIENT_ID && { client_id: UBER_CLIENT_ID }),
-      'pickup[latitude]':           pickupLat,
-      'pickup[longitude]':          pickupLng,
-      'pickup[formatted_address]':  pickupAddress,
-      'dropoff[latitude]':          destLat,
-      'dropoff[longitude]':         destLng,
-      'dropoff[nickname]':          destName,
-      'dropoff[formatted_address]': destAddress || destName,
-    });
-    return `https://m.uber.com/ul/?${params}`;
+    const enc = encodeURIComponent;
+    const parts = [
+      'action=setPickup',
+      ...(UBER_CLIENT_ID ? [`client_id=${enc(UBER_CLIENT_ID)}`] : []),
+      `pickup[latitude]=${pickupLat}`,
+      `pickup[longitude]=${pickupLng}`,
+      `pickup[formatted_address]=${enc(pickupAddress || '')}`,
+      `dropoff[latitude]=${destLat}`,
+      `dropoff[longitude]=${destLng}`,
+      `dropoff[nickname]=${enc(destName || '')}`,
+      `dropoff[formatted_address]=${enc(destAddress || destName || '')}`,
+    ];
+    return `https://m.uber.com/ul/?${parts.join('&')}`;
   },
 };
