@@ -10,8 +10,14 @@
  *  6. Session status → en_route; receiver GPS shared via DB polling
  */
 
-const API_BASE       = import.meta.env.VITE_API_URL || '';
-const UBER_CLIENT_ID = import.meta.env.VITE_UBER_CLIENT_ID || '';
+const API_BASE        = import.meta.env.VITE_API_URL || '';
+const UBER_CLIENT_ID  = import.meta.env.VITE_UBER_CLIENT_ID || '';
+const LOCAL_KEY       = 'rf_saferide_sessions'; // legacy key for backward compat
+
+const getLocalSession = (id) => {
+  try { return (JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'))[id] || null; }
+  catch { return null; }
+};
 
 // ── API helpers ────────────────────────────────────────────────────────────
 
@@ -43,9 +49,16 @@ export const safeRideService = {
     return session.id;
   },
 
-  // Load session from DB (works on any device)
+  // Load session from DB — falls back to localStorage for old sessions
   getRide: async (session_id) => {
-    return apiFetch(`/api/saferide/${session_id}`);
+    try {
+      return await apiFetch(`/api/saferide/${session_id}`);
+    } catch (apiErr) {
+      // Fallback: check localStorage (sessions created before DB migration)
+      const local = getLocalSession(session_id);
+      if (local) return local;
+      throw apiErr;
+    }
   },
 
   // Receiver stores their pickup address in DB
@@ -83,7 +96,7 @@ export const safeRideService = {
     }).catch(() => {}); // non-fatal if GPS update fails
   },
 
-  // Poll DB every 3s — works across devices (no localStorage)
+  // Poll DB every 3s — with localStorage fallback for old sessions
   subscribeToRide: (session_id, callback) => {
     let cancelled = false;
 
@@ -93,7 +106,9 @@ export const safeRideService = {
         const session = await apiFetch(`/api/saferide/${session_id}`);
         if (!cancelled) callback(session);
       } catch {
-        // ignore transient errors
+        // Fallback: try localStorage (old sessions)
+        const local = getLocalSession(session_id);
+        if (local && !cancelled) callback(local);
       }
     };
 

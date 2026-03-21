@@ -126,10 +126,22 @@ export default function SafeRideTracker() {
         </div>
     );
     if (!ride) return (
-        <div className="h-screen bg-gray-900 text-white flex items-center justify-center flex-col gap-4">
+        <div className="h-screen bg-gray-900 text-white flex items-center justify-center flex-col gap-5 p-6 text-center">
             <span className="material-icons text-5xl text-gray-600">local_taxi</span>
-            <p className="text-gray-400">Ride not found</p>
-            <button onClick={() => navigate(-1)} className="text-blue-400 underline">Go back</button>
+            <div>
+                <h2 className="font-bold text-xl mb-2">SafeRide not found</h2>
+                <p className="text-gray-400 text-sm mb-1">This ride session may have expired or the invite was sent before an app update.</p>
+                <p className="text-gray-500 text-xs">Ask your match to send a new SafeRide invite.</p>
+            </div>
+            <div className="flex flex-col gap-3 w-full max-w-xs">
+                <button
+                    onClick={() => window.location.reload()}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 font-bold rounded-xl flex items-center justify-center gap-2"
+                >
+                    <span className="material-icons text-sm">refresh</span> Retry
+                </button>
+                <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white underline text-sm">Go back</button>
+            </div>
         </div>
     );
 
