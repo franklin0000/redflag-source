@@ -7,170 +7,140 @@ import Map, { Marker } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-const MAPBOX_STYLE = "mapbox://styles/mapbox/dark-v11";
+const MAPBOX_STYLE  = 'mapbox://styles/mapbox/dark-v11';
+
 export default function SafeRideTracker() {
     const { sessionId } = useParams();
-    const navigate = useNavigate();
-    const { user } = useAuth();
-    const toast = useToast();
+    const navigate      = useNavigate();
+    const { user }      = useAuth();
+    const toast         = useToast();
 
-    const [ride, setRide] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [pickupInput, setPickupInput] = useState('');
-    const [viewState, setViewState] = useState({
-        longitude: -74.0060,
-        latitude: 40.7128,
-        zoom: 14
-    });
+    const [ride,         setRide]         = useState(null);
+    const [loading,      setLoading]      = useState(true);
+    const [pickupInput,  setPickupInput]  = useState('');
+    const [pickupCoords, setPickupCoords] = useState(null); // { lat, lng, address }
+    const [geocoding,    setGeocoding]    = useState(false);
+    const [viewState,    setViewState]    = useState({ longitude: -74.006, latitude: 40.7128, zoom: 14 });
 
-    // Map refs
-    const mapRef = useRef(null);
+    const mapRef      = useRef(null);
+    const gpsCleanup  = useRef(null);
 
-    // Load initial data
+    // ── Load + subscribe ──────────────────────────────────────────────────
     useEffect(() => {
-        let isMounted = true;
+        let mounted = true;
 
-        const fetchRide = async () => {
-            try {
-                const data = await safeRideService.getRide(sessionId);
-                if (isMounted) {
-                    setRide(data);
-                }
-            } catch (error) {
-                console.error("Error fetching saferide:", error);
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
+        safeRideService.getRide(sessionId)
+            .then(data => { if (mounted) { setRide(data); setLoading(false); } })
+            .catch(() => { if (mounted) setLoading(false); });
 
-        fetchRide();
-
-        // Subscribe to real-time updates for this session
-        const unsubscribe = safeRideService.subscribeToRide(sessionId, (updatedRide) => {
-            if (isMounted) {
-                setRide(updatedRide);
-                if (updatedRide.status === 'arrived') {
-                    toast.success("SafeRide has arrived at the pickup location!");
-                }
-            }
+        const unsub = safeRideService.subscribeToRide(sessionId, (updated) => {
+            if (!mounted) return;
+            setRide(updated);
+            if (updated.status === 'arrived') toast.success('SafeRide arrived! 🎉');
         });
 
-        return () => {
-            isMounted = false;
-            unsubscribe();
-        };
+        return () => { mounted = false; unsub(); };
     }, [sessionId, toast]);
 
     const isSender = ride?.sender_id === user?.id;
 
-    // Auto fit bounds when ride updates
+    // ── Auto-fit map bounds ───────────────────────────────────────────────
     useEffect(() => {
         if (!ride || !mapRef.current) return;
 
-        // Simple bounding box logic
-        let minLng = Math.min(ride.dest_lng, ride.car_lng || ride.dest_lng);
-        let maxLng = Math.max(ride.dest_lng, ride.car_lng || ride.dest_lng);
-        let minLat = Math.min(ride.dest_lat, ride.car_lat || ride.dest_lat);
-        let maxLat = Math.max(ride.dest_lat, ride.car_lat || ride.dest_lat);
+        const lats = [ride.dest_lat, ride.pickup_lat, ride.receiver_lat, ride.car_lat].filter(Boolean);
+        const lngs = [ride.dest_lng, ride.pickup_lng, ride.receiver_lng, ride.car_lng].filter(Boolean);
+        if (lats.length < 2) return;
 
-        if (!isSender && ride.pickup_lat && ride.pickup_lng) {
-            minLng = Math.min(minLng, ride.pickup_lng);
-            maxLng = Math.max(maxLng, ride.pickup_lng);
-            minLat = Math.min(minLat, ride.pickup_lat);
-            maxLat = Math.max(maxLat, ride.pickup_lat);
-        }
-
-        // Add some padding to the bounds
-        const lngPadding = (maxLng - minLng) * 0.1 || 0.01;
-        const latPadding = (maxLat - minLat) * 0.1 || 0.01;
-
+        const pad = 0.01;
         try {
             mapRef.current.fitBounds(
-                [
-                    [minLng - lngPadding, minLat - latPadding],
-                    [maxLng + lngPadding, maxLat + latPadding]
-                ],
-                { padding: 50, duration: 1000 }
+                [[Math.min(...lngs) - pad, Math.min(...lats) - pad],
+                 [Math.max(...lngs) + pad, Math.max(...lats) + pad]],
+                { padding: 60, duration: 800 }
             );
-        } catch (e) {
-            console.warn("Bounds fitting error:", e);
-        }
-    }, [ride, isSender]);
+        } catch {}
+    }, [ride]);
 
-    const [isConnectingUber, setIsConnectingUber] = useState(false);
-
-    // Check if sender already connected Uber (e.g. after returning from OAuth)
+    // ── GPS sharing: receiver starts sharing when en_route ────────────────
     useEffect(() => {
-        if (!isSender || ride?.status !== 'requested') return;
+        if (isSender || ride?.status !== 'en_route') return;
 
-        safeRideService.isUberConnected().then(setIsConnectingUber);
-    }, [isSender, ride?.status]);
+        // Start sharing GPS
+        gpsCleanup.current = safeRideService.startGpsSharing(sessionId, null /* socket optional */);
+        return () => { gpsCleanup.current?.(); };
+    }, [isSender, ride?.status, sessionId]);
 
-    // Car movement simulation removed. Real-time updates are driven purely
-    // by Supabase realtime subscription which listens to our webhook edge function updates.
-
-    const handleAcceptRide = async (e) => {
+    // ── Geocode pickup address ────────────────────────────────────────────
+    const handleGeocode = async (e) => {
         e.preventDefault();
+        if (!pickupInput.trim()) return;
+        setGeocoding(true);
         try {
-            // Geocode the fake pickup using Mapbox instead of Google Maps
-            toast.info("Finding pickup location...");
+            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(pickupInput)}.json?access_token=${MAPBOX_TOKEN}&limit=1`;
+            const res  = await fetch(url);
+            const data = await res.json();
 
-            const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
-            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(pickupInput)}.json?access_token=${mapboxToken}&limit=1`;
-
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("Geocoding failed");
-
-            const data = await response.json();
-
-            if (data.features && data.features.length > 0) {
-                const feature = data.features[0];
-                const lat = feature.center[1];
-                const lng = feature.center[0];
-
-                toast.info("Requesting Uber...");
-
-                try {
-                    await safeRideService.acceptRide(sessionId, feature.place_name || pickupInput, lat, lng);
-                    toast.success("Uber is on the way!");
-                } catch (err) {
-                    console.error("Uber Accept Error:", err);
-                    toast.error("Failed to connect to Uber API");
-                }
-            } else {
-                toast.error("Could not find that address");
+            if (!data.features?.length) {
+                toast.error('Address not found. Try a more specific address.');
+                return;
             }
+
+            const feature = data.features[0];
+            const coords  = { lat: feature.center[1], lng: feature.center[0], address: feature.place_name };
+            setPickupCoords(coords);
+
+            await safeRideService.acceptRide(sessionId, coords.address, coords.lat, coords.lng);
+            toast.success('Pickup location confirmed!');
         } catch (err) {
-            toast.error("Failed to accept ride");
+            toast.error('Geocoding failed. Check your address.');
             console.error(err);
+        } finally {
+            setGeocoding(false);
         }
     };
 
-    const handleConnectUber = () => {
-        // In production, redirect to Uber OAuth. In dev (no client ID), stay on page
-        // and simulate the connected state so the UI can be tested end-to-end.
-        if (import.meta.env.VITE_UBER_CLIENT_ID) {
-            setIsConnectingUber(true);
-            window.location.href = safeRideService.getUberAuthUrl(user.id);
-        } else {
-            toast.info("Connecting to Uber (Simulated)...");
-            setTimeout(() => {
-                toast.success("Uber Connected! (Simulation Mode)");
-                setIsConnectingUber(true);
-            }, 1500);
-        }
+    // ── Open Uber with pre-filled pickup + destination ────────────────────
+    const handleOpenUber = () => {
+        if (!pickupCoords || !ride) return;
+
+        const uberUrl = safeRideService.getUberDeepLink(
+            pickupCoords.lat, pickupCoords.lng, pickupCoords.address,
+            ride.dest_lat, ride.dest_lng, ride.dest_name, ride.dest_address
+        );
+
+        // Mark as en_route so the sender's map updates
+        safeRideService.confirmUberOpened(sessionId);
+
+        // Open Uber (mobile: opens app; desktop: opens m.uber.com)
+        window.open(uberUrl, '_blank', 'noopener');
+        toast.success('Uber opened! Complete your booking in the Uber app.');
     };
 
-    if (loading) return <div className="h-screen bg-gray-900 text-white flex items-center justify-center">Loading SafeRide...</div>;
-    if (!ride) return <div className="h-screen bg-gray-900 text-white flex items-center justify-center">Ride not found</div>;
+    // ── Loading / not found ───────────────────────────────────────────────
+    if (loading) return (
+        <div className="h-screen bg-gray-900 text-white flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-gray-600 border-t-white rounded-full animate-spin mr-3" />
+            Loading SafeRide...
+        </div>
+    );
+    if (!ride) return (
+        <div className="h-screen bg-gray-900 text-white flex items-center justify-center flex-col gap-4">
+            <span className="material-icons text-5xl text-gray-600">local_taxi</span>
+            <p className="text-gray-400">Ride not found</p>
+            <button onClick={() => navigate(-1)} className="text-blue-400 underline">Go back</button>
+        </div>
+    );
 
-    const showPickupForm = !isSender && ride.status === 'requested';
-    const showWaiting = isSender && ride.status === 'requested';
+    const showPickupForm  = !isSender && ride.status === 'requested';
+    const showUberButton  = !isSender && ride.status === 'pickup_ready' && pickupCoords;
+    const showWaiting     = isSender  && (ride.status === 'requested' || ride.status === 'pickup_ready');
 
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-white relative">
-            {/* Header Overlay */}
-            <div className="absolute top-0 inset-x-0 z-10 bg-gradient-to-b from-gray-900 to-transparent p-4 flex items-center justify-between">
+
+            {/* ── Header ── */}
+            <div className="absolute top-0 inset-x-0 z-10 bg-gradient-to-b from-gray-900/95 to-transparent p-4 flex items-center justify-between">
                 <button onClick={() => navigate(-1)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 backdrop-blur-md">
                     <span className="material-icons text-white">arrow_back</span>
                 </button>
@@ -179,44 +149,112 @@ export default function SafeRideTracker() {
                         <span className="material-icons text-blue-400">local_taxi</span>
                         SAFERIDE
                     </h1>
-                    <p className="text-xs text-gray-400">Uber Business Integrated</p>
+                    <p className="text-xs text-gray-400">
+                        {ride.status === 'requested' && 'Waiting for pickup address…'}
+                        {ride.status === 'pickup_ready' && 'Ready to open Uber'}
+                        {ride.status === 'en_route' && '🟢 Ride in progress'}
+                        {ride.status === 'arrived'  && '✅ Arrived!'}
+                    </p>
                 </div>
-                <div className="w-10"></div>
+                <div className="w-10" />
             </div>
 
-            {/* Google Map Container or Form Area */}
-            {showPickupForm ? (
+            {/* ── Pickup form (receiver, step 1) ── */}
+            {showPickupForm && (
                 <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black z-20">
-                    <div className="bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-gray-700">
-                        <h2 className="text-2xl font-bold text-center mb-2">Accept SafeRide</h2>
-                        <p className="text-sm text-gray-400 text-center mb-6">Your match paid for your ride! Enter your pickup location. <strong className="text-red-400">Your match will NEVER see this address.</strong></p>
+                    <div className="bg-gray-800 p-8 rounded-3xl w-full max-w-sm border border-gray-700 shadow-xl">
+                        <div className="flex items-center justify-center w-16 h-16 bg-blue-900/40 rounded-full mx-auto mb-4">
+                            <span className="material-icons text-blue-400 text-3xl">my_location</span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-center mb-1">Enter Pickup</h2>
+                        <p className="text-sm text-gray-400 text-center mb-6">
+                            Your match paid for your Uber!<br />
+                            <strong className="text-green-400">Your address is NEVER shared</strong> with them.
+                        </p>
 
-                        <form onSubmit={handleAcceptRide} className="flex flex-col gap-4">
+                        <form onSubmit={handleGeocode} className="flex flex-col gap-4">
                             <div>
-                                <label className="text-xs text-gray-400 font-bold ml-1 mb-1 block">Pickup Address</label>
+                                <label className="text-xs text-gray-400 font-bold ml-1 mb-1 block">Your pickup address</label>
                                 <input
                                     type="text"
                                     value={pickupInput}
-                                    onChange={(e) => setPickupInput(e.target.value)}
-                                    placeholder="e.g. 123 Main St, Apt 4B"
+                                    onChange={e => setPickupInput(e.target.value)}
+                                    placeholder="e.g. 123 Main St, Brooklyn NY"
                                     className="w-full bg-gray-900 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                                     required
+                                    autoFocus
                                 />
                             </div>
                             <button
                                 type="submit"
-                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 font-bold rounded-xl mt-2 transition-colors flex items-center justify-center gap-2"
+                                disabled={geocoding}
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-900 font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
                             >
-                                <span className="material-icons">directions_car</span> Dispatch Driver
+                                {geocoding
+                                    ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Finding…</>
+                                    : <><span className="material-icons text-sm">search</span> Confirm Address</>
+                                }
                             </button>
                         </form>
                     </div>
                 </div>
-            ) : (
+            )}
+
+            {/* ── Open Uber button (receiver, step 2) ── */}
+            {showUberButton && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black z-20">
+                    <div className="bg-gray-800 p-8 rounded-3xl w-full max-w-sm border border-gray-700 shadow-xl text-center">
+                        <div className="w-20 h-20 bg-black rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-gray-600">
+                            <span className="material-icons text-white text-4xl">local_taxi</span>
+                        </div>
+                        <h2 className="text-2xl font-bold mb-2">Ready to Ride!</h2>
+
+                        <div className="bg-gray-900 rounded-2xl p-4 mb-6 text-left">
+                            <div className="flex items-start gap-3 mb-3">
+                                <span className="material-icons text-blue-400 text-lg mt-0.5">trip_origin</span>
+                                <div>
+                                    <p className="text-xs text-gray-500 font-bold uppercase">Pickup</p>
+                                    <p className="text-sm text-white">{pickupCoords.address}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                                <span className="material-icons text-yellow-400 text-lg mt-0.5">place</span>
+                                <div>
+                                    <p className="text-xs text-gray-500 font-bold uppercase">Destination</p>
+                                    <p className="text-sm text-white">{ride.dest_name}</p>
+                                    <p className="text-xs text-gray-500">{ride.dest_address}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={handleOpenUber}
+                            className="w-full py-4 bg-black text-white font-bold rounded-xl border-2 border-white hover:bg-gray-900 transition-colors flex items-center justify-center gap-3 text-lg"
+                        >
+                            <span className="material-icons">open_in_new</span>
+                            Open Uber
+                        </button>
+                        <p className="text-xs text-gray-500 mt-3">
+                            Uber app opens with your ride pre-filled. Complete booking there.
+                        </p>
+
+                        {/* Change address option */}
+                        <button
+                            onClick={() => { setPickupCoords(null); safeRideService.acceptRide(sessionId, '', null, null).catch(() => {}); }}
+                            className="mt-4 text-xs text-gray-500 hover:text-gray-300 underline"
+                        >
+                            Change pickup address
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Map (sender always; receiver when en_route or arrived) ── */}
+            {!showPickupForm && !showUberButton && (
                 <div className="flex-1 w-full relative">
                     {!MAPBOX_TOKEN ? (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-900 text-white">
-                            <p>Mapbox Token Missing in .env</p>
+                        <div className="w-full h-full flex items-center justify-center bg-gray-900 text-gray-400">
+                            Map unavailable (Mapbox token missing)
                         </div>
                     ) : (
                         <Map
@@ -227,30 +265,32 @@ export default function SafeRideTracker() {
                             mapboxAccessToken={MAPBOX_TOKEN}
                             style={{ width: '100%', height: '100%' }}
                         >
-                            {/* Destination Marker */}
-                            {ride && ride.dest_lat && ride.dest_lng && (
+                            {/* Destination */}
+                            {ride.dest_lat && ride.dest_lng && (
                                 <Marker longitude={ride.dest_lng} latitude={ride.dest_lat} anchor="bottom">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24">
-                                        <path fill="#f59e0b" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-                                    </svg>
+                                    <div className="flex flex-col items-center">
+                                        <div className="bg-yellow-400 text-black text-xs font-bold px-2 py-0.5 rounded-full mb-1 shadow">
+                                            {ride.dest_name}
+                                        </div>
+                                        <span className="material-icons text-yellow-400 text-3xl drop-shadow-lg">place</span>
+                                    </div>
                                 </Marker>
                             )}
 
-                            {/* Pickup Marker (Only for receiver) */}
-                            {ride && !isSender && ride.pickup_lat && ride.pickup_lng && (
-                                <Marker longitude={ride.pickup_lng} latitude={ride.pickup_lat} anchor="center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
-                                        <circle cx="12" cy="12" r="8" fill="#3b82f6" stroke="#fff" strokeWidth="2" />
-                                    </svg>
+                            {/* Receiver live location (blue dot) */}
+                            {ride.receiver_lat && ride.receiver_lng && (
+                                <Marker longitude={ride.receiver_lng} latitude={ride.receiver_lat} anchor="center">
+                                    <div className="relative">
+                                        <div className="w-5 h-5 bg-blue-500 rounded-full border-2 border-white shadow-lg" />
+                                        <div className="absolute inset-0 w-5 h-5 bg-blue-500 rounded-full opacity-40 animate-ping" />
+                                    </div>
                                 </Marker>
                             )}
 
-                            {/* Car Marker */}
-                            {ride && ride.status === 'en_route' && ride.car_lat && ride.car_lng && (
+                            {/* Car marker (if set) */}
+                            {ride.car_lat && ride.car_lng && ride.status === 'en_route' && (
                                 <Marker longitude={ride.car_lng} latitude={ride.car_lat} anchor="center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24">
-                                        <path fill="#fff" d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z" />
-                                    </svg>
+                                    <span className="material-icons text-white text-4xl drop-shadow-lg">local_taxi</span>
                                 </Marker>
                             )}
                         </Map>
@@ -258,79 +298,94 @@ export default function SafeRideTracker() {
                 </div>
             )}
 
-            {/* Bottom Status Panel */}
-            <div className="absolute bottom-0 inset-x-0 z-10 bg-gray-900 border-t border-gray-800 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] p-6 pb-8">
+            {/* ── Bottom panel ── */}
+            <div className="absolute bottom-0 inset-x-0 z-10 bg-gray-900/95 backdrop-blur border-t border-gray-800 rounded-t-3xl p-6 pb-8">
 
+                {/* Sender waiting */}
                 {showWaiting && (
                     <div className="text-center">
-                        {!isConnectingUber ? (
+                        {ride.status === 'requested' ? (
                             <>
-                                <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-700">
-                                    <span className="material-icons text-white text-3xl">local_taxi</span>
+                                <div className="w-10 h-10 border-4 border-gray-700 border-t-blue-400 rounded-full animate-spin mx-auto mb-3" />
+                                <h3 className="font-bold text-lg mb-1">Waiting for your match</h3>
+                                <p className="text-gray-400 text-sm">They're entering their pickup address privately…</p>
+                                <div className="mt-4 bg-gray-800 rounded-2xl p-4 text-left">
+                                    <p className="text-xs text-gray-500 font-bold uppercase mb-1">Destination</p>
+                                    <p className="text-white font-semibold">{ride.dest_name}</p>
+                                    <p className="text-gray-400 text-sm">{ride.dest_address}</p>
                                 </div>
-                                <h3 className="font-bold text-lg mb-2">Connect Your Uber Account</h3>
-                                <p className="text-gray-400 text-sm mb-6">Link your Uber account so your match can dispatch a ride home.</p>
-                                <button
-                                    onClick={handleConnectUber}
-                                    className="bg-white text-black font-bold py-3 px-8 rounded-full hover:bg-gray-200 transition-colors"
-                                >
-                                    Connect Uber
-                                </button>
                             </>
                         ) : (
                             <>
-                                <div className="w-16 h-16 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-400/50">
-                                    <span className="material-icons text-blue-400 text-3xl">check</span>
+                                <div className="flex items-center justify-center gap-2 mb-3">
+                                    <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse" />
+                                    <h3 className="font-bold text-lg text-green-400">Pickup confirmed!</h3>
                                 </div>
-                                <h3 className="font-bold text-lg text-blue-400 mb-4">Uber Connected!</h3>
-
-                                <div className="w-8 h-8 border-4 border-gray-600 border-t-gray-300 rounded-full animate-spin mx-auto mb-2"></div>
-                                <p className="text-gray-400 text-sm">Waiting for your match to securely enter their pickup location...</p>
+                                <p className="text-gray-400 text-sm">Your match is opening Uber now…</p>
+                                <div className="mt-4 bg-gray-800 rounded-2xl p-4 text-left">
+                                    <p className="text-xs text-gray-500 font-bold uppercase mb-1">Destination</p>
+                                    <p className="text-white font-semibold">{ride.dest_name}</p>
+                                </div>
                             </>
                         )}
                     </div>
                 )}
 
+                {/* En route */}
                 {ride.status === 'en_route' && (
                     <div>
-                        <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse" />
                             <div>
-                                <h3 className="font-bold text-xl">{ride.eta_minutes} min away</h3>
-                                <p className="text-gray-400 text-sm">Heading to {ride.dest_name}</p>
-                            </div>
-                            <div className="text-right">
-                                <span className="bg-blue-900/50 text-blue-400 font-bold px-3 py-1 rounded-full text-sm border border-blue-500/30">
-                                    {ride.license_plate}
-                                </span>
-                                <p className="text-xs font-bold text-gray-500 mt-1">{ride.car_model}</p>
+                                <h3 className="font-bold text-lg">Ride in progress</h3>
+                                <p className="text-gray-400 text-sm">
+                                    {isSender
+                                        ? "Track your match's location on the map"
+                                        : 'Your driver is on the way \u2014 check Uber app for details'}
+                                </p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-4 bg-gray-800 p-4 rounded-2xl">
-                            <div className="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center">
-                                <span className="material-icons text-gray-400 text-2xl">person</span>
+                        <div className="bg-gray-800 rounded-2xl p-4 flex items-center gap-4">
+                            <span className="material-icons text-yellow-400 text-3xl">local_taxi</span>
+                            <div className="flex-1">
+                                <p className="font-bold">{ride.dest_name}</p>
+                                <p className="text-sm text-gray-400">{ride.dest_address}</p>
                             </div>
-                            <div>
-                                <p className="font-bold">{ride.driver_name}</p>
-                                <div className="flex items-center gap-1 text-yellow-400 text-xs mt-1">
-                                    <span className="material-icons text-sm">star</span>
-                                    4.9 Rating
-                                </div>
-                            </div>
-                            <button className="ml-auto bg-gray-700 hover:bg-gray-600 w-10 h-10 rounded-full flex items-center justify-center transition-colors">
-                                <span className="material-icons text-sm">call</span>
-                            </button>
+                            {!isSender && (
+                                <a
+                                    href={`https://m.uber.com`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bg-black text-white text-xs font-bold px-3 py-2 rounded-xl border border-gray-600 hover:border-white transition-colors"
+                                >
+                                    Open Uber
+                                </a>
+                            )}
                         </div>
+
+                        {isSender && (
+                            <p className="text-center text-xs text-gray-500 mt-3">
+                                🔵 Blue dot = your match's live location
+                            </p>
+                        )}
                     </div>
                 )}
 
+                {/* Arrived */}
                 {ride.status === 'arrived' && (
-                    <div className="text-center py-4">
-                        <div className="w-16 h-16 bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="text-center py-2">
+                        <div className="w-16 h-16 bg-green-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
                             <span className="material-icons text-green-400 text-3xl">done_all</span>
                         </div>
-                        <h3 className="font-bold text-xl text-green-400">Driver Arrived</h3>
-                        <p className="text-gray-400 text-sm mt-1">The date begins at {ride.dest_name}!</p>
+                        <h3 className="font-bold text-xl text-green-400 mb-1">Arrived!</h3>
+                        <p className="text-gray-400 text-sm">Enjoy your date at <strong>{ride.dest_name}</strong> 🎉</p>
+                        <button
+                            onClick={() => navigate(-1)}
+                            className="mt-5 bg-green-600 hover:bg-green-700 text-white font-bold px-8 py-3 rounded-full transition-colors"
+                        >
+                            Done
+                        </button>
                     </div>
                 )}
             </div>
