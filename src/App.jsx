@@ -39,6 +39,7 @@ const GuardianMode = React.lazy(() => import('./pages/GuardianMode'));
 const GuardianDashboard = React.lazy(() => import('./pages/GuardianDashboard'));
 const LiveDateRadar = React.lazy(() => import('./pages/LiveDateRadar'));
 const SafeRideTracker = React.lazy(() => import('./pages/SafeRideTracker'));
+const MatchProfile = React.lazy(() => import('./pages/MatchProfile'));
 const RedFlagMap = React.lazy(() => import('./pages/RedFlagMap'));
 const SafetyHistory = React.lazy(() => import('./pages/SafetyHistory'));
 const VideoCall = React.lazy(() => import('./pages/VideoCall'));
@@ -135,6 +136,11 @@ function App() {
                         <PremiumGate feature="Dating Mode">
                           <DatingProfile />
                         </PremiumGate>
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/dating/profile/:userId" element={
+                      <ProtectedRoute>
+                        <MatchProfile />
                       </ProtectedRoute>
                     } />
                     <Route path="/dating/chat/:matchId" element={

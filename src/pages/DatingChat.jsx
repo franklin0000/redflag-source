@@ -627,7 +627,11 @@ export default function DatingChat() {
                     <button onClick={() => navigate('/dating')} className="text-gray-400">
                         <span className="material-icons">arrow_back</span>
                     </button>
-                    <div className="relative">
+                    <button
+                        onClick={handleViewProfile}
+                        className="relative hover:opacity-80 transition-opacity"
+                        title="View profile"
+                    >
                         <div className="w-10 h-10 rounded-full bg-purple-900 flex items-center justify-center border border-purple-500 overflow-hidden">
                             {match?.photo ? (
                                 <img src={match.photo} alt={match?.name || 'User'} className="w-full h-full object-cover" />
@@ -636,8 +640,8 @@ export default function DatingChat() {
                             )}
                         </div>
                         <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></span>
-                    </div>
-                    <div>
+                    </button>
+                    <button onClick={handleViewProfile} className="text-left hover:opacity-80 transition-opacity">
                         <h3 className="font-bold flex items-center gap-1">
                             {match?.name || 'Unknown'}
                             {match?.isVerified && <span className="material-icons text-blue-400 text-[14px]">verified</span>}
@@ -652,7 +656,7 @@ export default function DatingChat() {
                                 <span className="material-icons text-[10px]">lock</span> End-to-End Encrypted
                             </p>
                         </div>
-                    </div>
+                    </button>
                 </div>
 
                 {/* Actions & Guardian */}

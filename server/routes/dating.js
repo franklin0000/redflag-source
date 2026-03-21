@@ -36,6 +36,46 @@ async function resolveMatchId(rawId, userId = null) {
   return null; // not resolvable
 }
 
+// GET /api/dating/profile/:userId — view another user's dating profile + safety info
+router.get('/profile/:userId', requireAuth, async (req, res) => {
+  const { userId } = req.params;
+  try {
+    // Dating profile + user info
+    const { rows } = await db.query(
+      `SELECT u.id, u.name, u.photo_url, u.is_verified,
+              dp.age, dp.bio, dp.photos, dp.interests, dp.safety_score,
+              dp.location, dp.gender, dp.gender_verified
+       FROM dating_profiles dp
+       JOIN users u ON u.id = dp.user_id
+       WHERE dp.user_id = $1`,
+      [userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Profile not found' });
+    const profile = rows[0];
+
+    // Reports filed against them (red flag count)
+    const { rows: repRows } = await db.query(
+      'SELECT COUNT(*) FROM reports WHERE reported_id = $1',
+      [userId]
+    );
+    const reportCount = parseInt(repRows[0].count) || 0;
+
+    // Compatibility with the viewer
+    const myInterests = (await db.query(
+      'SELECT interests FROM dating_profiles WHERE user_id = $1', [req.user.id]
+    )).rows[0]?.interests || [];
+    const shared = (profile.interests || []).filter(i => myInterests.includes(i));
+    const compatibility = myInterests.length
+      ? Math.round((shared.length / Math.max(myInterests.length, profile.interests?.length || 1)) * 100)
+      : 50;
+
+    res.json({ ...profile, reportCount, sharedInterests: shared, compatibility });
+  } catch (err) {
+    console.error('profile/:userId error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/dating/profile — get my dating profile
 router.get('/profile', requireAuth, async (req, res) => {
   try {
