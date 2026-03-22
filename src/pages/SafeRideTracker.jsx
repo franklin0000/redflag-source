@@ -36,7 +36,7 @@ export default function SafeRideTracker() {
         const unsub = safeRideService.subscribeToRide(sessionId, (updated) => {
             if (!mounted) return;
             setRide(updated);
-            if (updated.status === 'arrived') toast.success('SafeRide arrived! 🎉');
+            if (updated.status === 'arrived') toast.success('SafeRide completado! +10 $RFLAG 🪙');
         });
 
         return () => { mounted = false; unsub(); };

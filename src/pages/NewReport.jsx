@@ -74,7 +74,7 @@ export default function NewReport() {
             });
 
             setStatus('success');
-            toast.success("Report submitted successfully.");
+            toast.success("Report submitted! +100 $RFLAG si es confirmado 🪙");
 
             // 3. Navigate back
             setTimeout(() => {
