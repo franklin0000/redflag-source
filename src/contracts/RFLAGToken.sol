@@ -11,11 +11,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @dev $RFLAG — The native utility token of RedFlag App
  *
  * Tokenomics:
- *   Total Supply: 100,000,000 RFLAG (100 million)
- *   - 40% Community rewards (minted on demand via rewardUser)
- *   - 30% Team/Development (minted at deploy to owner)
- *   - 20% Ecosystem/Partnerships (minted at deploy to owner)
- *   - 10% Liquidity (minted at deploy to owner)
+ *   Total Supply: 1,000,000,000,000 RFLAG (1 trillion)
+ *   - 40% Community rewards (minted on demand via rewardUser) = 400B
+ *   - 30% Team/Development (minted at deploy to owner)        = 300B
+ *   - 20% Ecosystem/Partnerships (minted at deploy to owner)  = 200B
+ *   - 10% Liquidity (minted at deploy to owner)               = 100B
  *
  * Earning $RFLAG in-app:
  *   - Verify profile:           +50 RFLAG
@@ -31,8 +31,8 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  */
 contract RFLAGToken is ERC20, ERC20Burnable, Ownable, ReentrancyGuard {
 
-    uint256 public constant MAX_SUPPLY = 100_000_000 * 10**18; // 100M tokens
-    uint256 public constant COMMUNITY_ALLOCATION = 40_000_000 * 10**18; // 40M for rewards
+    uint256 public constant MAX_SUPPLY = 1_000_000_000_000 * 10**18; // 1 Trillion tokens
+    uint256 public constant COMMUNITY_ALLOCATION = 400_000_000_000 * 10**18; // 400B for rewards (40%)
 
     // Reward amounts (in RFLAG, 18 decimals)
     uint256 public constant REWARD_VERIFY_PROFILE    = 50  * 10**18;

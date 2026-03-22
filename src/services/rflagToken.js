@@ -7,7 +7,7 @@ import { polygon, polygonAmoy } from 'viem/chains';
 
 // ─── Contract Addresses ───────────────────────────────────────────────────────
 const RFLAG_CONTRACT_AMOY    = '0x0000000000000000000000000000000000000000'; // testnet (pendiente)
-const RFLAG_CONTRACT_POLYGON = '0xc3Da43E208388c8e24F2339f8D032B7254f3B9d6'; // mainnet ✅ desplegado
+const RFLAG_CONTRACT_POLYGON = '0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6'; // mainnet ✅ 1T supply
 
 const USE_TESTNET = import.meta.env.DEV; // testnet in dev, mainnet in prod
 export const RFLAG_ADDRESS = USE_TESTNET ? RFLAG_CONTRACT_AMOY : RFLAG_CONTRACT_POLYGON;
@@ -181,7 +181,7 @@ export const TOKEN_INFO = {
   name:     'RedFlag Token',
   symbol:   'RFLAG',
   decimals: 18,
-  maxSupply: '100,000,000',
+  maxSupply: '1,000,000,000,000',
   network:  USE_TESTNET ? 'Polygon Amoy (Testnet)' : 'Polygon',
   chainId:  USE_TESTNET ? 80002 : 137,
   logoUrl:  null, // will use app icon
