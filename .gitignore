@@ -4,6 +4,11 @@
 .env.production
 server/.env
 
+# Android keystore — NEVER commit
+*.jks
+*.keystore
+KEYSTORE_INFO.txt
+
 # Logs
 logs
 *.log

@@ -446,7 +446,7 @@ export default function CommunityRoom() {
         try {
             await usersApi.verifyGenderSelfie(capturedBlob);
             setVerifyModalOpen(false);
-            toast.success('¡Identidad verificada! Bienvenida/o.');
+            toast.success('¡Identidad verificada! Bienvenida/o. +50 $RFLAG 🪙');
             window.location.reload();
         } catch (err) {
             setVerifyError(err.message || 'Error de verificación. Por favor intenta de nuevo.');
