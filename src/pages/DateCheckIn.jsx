@@ -10,6 +10,7 @@ import {
 import { contactsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { twilioApi } from '../services/twilioService';
+import { voiceCheckInService } from '../services/voiceCheckInService';
 
 export default function DateCheckIn() {
     const navigate = useNavigate();
@@ -222,8 +223,10 @@ export default function DateCheckIn() {
         // 3. Try Twilio call first, fallback to tel: link
         try {
             await twilioApi.makeEmergencyCall(mapsLink, user?.name);
+            // Also try direct native call
+            await voiceCheckInService.callEmergency();
         } catch (err) {
-            console.warn('Twilio call failed, using native dial:', err.message);
+            console.warn('Emergency call failed, using native dial:', err.message);
             setTimeout(() => {
                 window.location.href = `tel:${emergencyNumber.number}`;
             }, 1500);
@@ -244,7 +247,7 @@ export default function DateCheckIn() {
         if (navigator.vibrate) navigator.vibrate(0);
     };
 
-    // Timer effect — when it hits 0, start a 30-second warning before triggering panic
+    // Timer effect — when it hits 0, start a voice check-in
     useEffect(() => {
         if (isActiveRef.current && timeLeft > 0) {
             timerRef.current = setInterval(() => {
@@ -252,10 +255,32 @@ export default function DateCheckIn() {
             }, 1000);
         } else if (timeLeft === 0 && isActiveRef.current) {
             clearInterval(timerRef.current);
-            // Defer state updates to avoid cascading renders in effect body
-            setTimeout(() => {
+            // Start Voice Check-in instead of just showing warning
+            setTimeout(async () => {
                 setIsActive(false);
-                setPanicWarning(30); // give 30 seconds to confirm safety before SOS
+                
+                // 1. Speak prompt
+                await voiceCheckInService.speak("¿Todo bien? ¿Estás tranquila?");
+                
+                // 2. Listen for response
+                const response = await voiceCheckInService.listen();
+                
+                // 3. Evaluate response
+                const positiveWords = ['sí', 'si', 'ok', 'bien', 'todo bien', 'tranquila'];
+                const negativeWords = ['no', 'ayuda', 'socorro', 'emergencia'];
+                
+                if (positiveWords.some(word => response.includes(word))) {
+                    toast.success("Safe! Guard deactivated. Stay safe! 💖");
+                    notifyContacts('Check-In: SAFE', 'I am safe. I confirmed via voice check-in.');
+                    stopTracking();
+                } else if (negativeWords.some(word => response.includes(word)) || response === '') {
+                    // Trigger SOS if negative or no response
+                    handlePanic();
+                } else {
+                    // Ambiguous response -> give one more chance or trigger SOS?
+                    // For safety, let's show the 30s manual warning as fallback
+                    setPanicWarning(30);
+                }
             }, 0);
         }
         return () => clearInterval(timerRef.current);

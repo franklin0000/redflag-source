@@ -420,6 +420,26 @@ export default function Settings() {
                 </section>
 
                 {/* About */}
+                {/* $RFLAG Token Wallet */}
+                <section>
+                    <SectionHeader title="Web3 & Token" />
+                    <div className="bg-white dark:bg-[#1a202c] rounded-xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                        <button
+                            onClick={() => navigate('/token')}
+                            className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                        >
+                            <div className="w-9 h-9 rounded-lg bg-[#d411b4]/15 flex items-center justify-center flex-shrink-0">
+                                <span className="text-lg">🪙</span>
+                            </div>
+                            <div className="flex-1 text-left">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">$RFLAG Wallet</p>
+                                <p className="text-xs text-gray-400 mt-0.5">Gana y usa tokens RedFlag en Polygon</p>
+                            </div>
+                            <span className="material-icons text-gray-400 text-lg">chevron_right</span>
+                        </button>
+                    </div>
+                </section>
+
                 <section>
                     <SectionHeader title="About" />
                     <div className="bg-white dark:bg-[#1a202c] rounded-xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">

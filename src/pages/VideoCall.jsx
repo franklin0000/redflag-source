@@ -12,7 +12,7 @@ export default function VideoCall() {
     const navigate = useNavigate();
     const toast = useToast();
     
-    const [room, setRoom] = useState(null);
+    const [_room, setRoom] = useState(null); // kept for potential future use
     const [participants, setParticipants] = useState([]);
     const [quality, setQuality] = useState('Checking...');
     const [isConnecting, setIsConnecting] = useState(true);

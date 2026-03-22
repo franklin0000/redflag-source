@@ -43,6 +43,7 @@ const MatchProfile = React.lazy(() => import('./pages/MatchProfile'));
 const RedFlagMap = React.lazy(() => import('./pages/RedFlagMap'));
 const SafetyHistory = React.lazy(() => import('./pages/SafetyHistory'));
 const VideoCall = React.lazy(() => import('./pages/VideoCall'));
+const TokenWallet = React.lazy(() => import('./pages/TokenWallet'));
 
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
@@ -247,6 +248,11 @@ function App() {
                         <PremiumGate feature="Facial Recognition Scan">
                           <FacialScan />
                         </PremiumGate>
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/token" element={
+                      <ProtectedRoute>
+                        <TokenWallet />
                       </ProtectedRoute>
                     } />
                     <Route path="/swarm" element={
