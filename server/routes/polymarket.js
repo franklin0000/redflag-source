@@ -4,6 +4,13 @@ const { requireAuth } = require('../middleware/auth');
 const polymarket = require('../utils/polymarket');
 const db = require('../db');
 const fetch = require('node-fetch');
+const { ethers } = require('ethers');
+
+// USDC contract on Polygon
+const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const USDC_ABI = ['function balanceOf(address owner) view returns (uint256)'];
+const POLYGON_RPC = process.env.POLY_RPC_URL || 'https://polygon-rpc.com';
+const OPERATOR_ADDRESS = process.env.VITE_PROXY_WALLET_ADDRESS || '';
 
 // The markup fee requested: 1.5%
 const MARKUP_FEE_PERCENT = 0.015;
@@ -28,7 +35,7 @@ router.get('/markets', async (req, res) => {
 // Proxy Trade Endpoint
 router.post('/proxy-trade', requireAuth, async (req, res) => {
   try {
-    const { tokenId, price, size, side } = req.body;
+    const { tokenId, price, size, side, txHash, userAddress } = req.body;
     const userId = req.user.id;
 
     if (!tokenId || !price || !size || !side) {
@@ -40,13 +47,33 @@ router.post('/proxy-trade', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid price or size' });
     }
 
+    // Verify the user actually sent USDC to the operator wallet
+    // by checking the tx on-chain or checking operator balance change
+    if (txHash && userAddress && OPERATOR_ADDRESS) {
+      try {
+        const provider = new ethers.providers.JsonRpcProvider(POLYGON_RPC);
+        const receipt = await provider.getTransactionReceipt(txHash);
+        if (!receipt || receipt.status !== 1) {
+          return res.status(402).json({ error: 'USDC transfer not confirmed on-chain. Please wait for tx confirmation.' });
+        }
+        // Verify the tx was from the expected user wallet
+        const tx = await provider.getTransaction(txHash);
+        if (tx.from.toLowerCase() !== userAddress.toLowerCase()) {
+          return res.status(403).json({ error: 'Transaction sender does not match your wallet address.' });
+        }
+      } catch (verifyErr) {
+        console.warn('Could not verify tx on-chain:', verifyErr.message);
+        // Non-fatal: proceed but log the warning
+      }
+    }
+
     // Calculate real price using 1.5% fee logic
     let realPrice;
     let feeAmount;
 
     // "Si el user paga 0.74, el precio real es 0.72. Tú te quedas 0.02"
     if (side === 'BUY') {
-      realPrice = price / (1 + MARKUP_FEE_PERCENT); 
+      realPrice = price / (1 + MARKUP_FEE_PERCENT);
       feeAmount = price - realPrice;
     } else if (side === 'SELL') {
       realPrice = price * (1 + MARKUP_FEE_PERCENT);

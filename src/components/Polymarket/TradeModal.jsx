@@ -56,21 +56,24 @@ export default function TradeModal({ market, yesPrice, noPrice, onClose }) {
     setLoading(true);
 
     try {
-      // Step 1: Transfer USDC to backend proxy (simulated operator wallet) to fund the trade
-      // In a real app we would wait for confirmation, then call backend.
-      const usdcAmount = parseUnits(totalCost.toString(), 6);
-      
-      writeContract({
+      // Step 1: Transfer USDC to backend proxy wallet
+      const usdcAmount = parseUnits(totalCost.toFixed(6), 6);
+
+      // writeContractAsync returns a tx hash after wallet confirms
+      const txHash = await writeContract({
         address: USDC_ADDRESS,
         abi: erc20Abi,
         functionName: 'transfer',
         args: [PROXY_OPERATOR_WALLET, usdcAmount],
       });
 
-      // We proceed optimistically or wait for isConfirmed in a real flow.
-      // Calling our proxy API:
-      const proxyUrl = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/polymarket/proxy-trade` : 'http://localhost:10000/api/polymarket/proxy-trade';
-      
+      if (!txHash) throw new Error("USDC transfer was rejected or failed.");
+
+      // Step 2: Call proxy API — pass txHash so server can verify on-chain
+      const proxyUrl = import.meta.env.VITE_API_URL
+        ? `${import.meta.env.VITE_API_URL}/api/polymarket/proxy-trade`
+        : '/api/polymarket/proxy-trade';
+
       const token = localStorage.getItem('token');
       const response = await fetch(proxyUrl, {
         method: 'POST',
@@ -82,7 +85,9 @@ export default function TradeModal({ market, yesPrice, noPrice, onClose }) {
           tokenId: market?.tokenId || "mock-token-id-1234",
           price: activePrice,
           size: size,
-          side: side
+          side: side,
+          txHash: txHash,
+          userAddress: address
         })
       });
 
