@@ -414,6 +414,101 @@ export default function TokenWallet() {
                 </a>
               )}
             </motion.div>
+
+            {/* Security / Anti-Rug Section */}
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+              className="bg-green-500/5 border border-green-500/20 rounded-2xl p-4 space-y-3"
+            >
+              <p className="text-green-400 text-xs font-bold uppercase tracking-wider">🔒 Seguridad Anti-Rug</p>
+
+              {/* Ownership renounced */}
+              <a
+                href="https://polygonscan.com/tx/0x270309e42241b37d94285dc0c21df6c4df918281c8d3efae2c704a71259f65cb"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 hover:bg-white/5 rounded-xl p-1 transition-colors"
+              >
+                <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center text-sm flex-shrink-0">✅</div>
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-white">Ownership Renunciado</p>
+                  <p className="text-xs text-white/40">No se pueden crear más tokens jamás</p>
+                </div>
+                <span className="text-green-400 text-xs">Ver →</span>
+              </a>
+
+              {/* LP Locked */}
+              <a
+                href="https://polygonscan.com/address/0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 hover:bg-white/5 rounded-xl p-1 transition-colors"
+              >
+                <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center text-sm flex-shrink-0">🔐</div>
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-white">Liquidez Bloqueada 2 Años</p>
+                  <p className="text-xs text-white/40">8.1M SLP bloqueados hasta 2028-03-23</p>
+                </div>
+                <span className="text-green-400 text-xs">Ver →</span>
+              </a>
+
+              {/* Source verified */}
+              <a
+                href="https://repo.sourcify.dev/contracts/full_match/137/0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 hover:bg-white/5 rounded-xl p-1 transition-colors"
+              >
+                <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center text-sm flex-shrink-0">📋</div>
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-white">Código Verificado Públicamente</p>
+                  <p className="text-xs text-white/40">TimeLock sin backdoors — auditable</p>
+                </div>
+                <span className="text-green-400 text-xs">Ver →</span>
+              </a>
+            </motion.div>
+
+            {/* Buy / Trade Links */}
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+              className="bg-white/3 border border-white/8 rounded-2xl p-4 space-y-2"
+            >
+              <p className="text-white/40 text-xs font-medium uppercase tracking-wider">Comprar / Tradear</p>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <a
+                  href={`https://app.sushi.com/swap?inputCurrency=MATIC&outputCurrency=${RFLAG_ADDRESS}&chainId=137`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 bg-[#d411b4]/20 hover:bg-[#d411b4]/30 border border-[#d411b4]/30 rounded-xl py-3 text-xs font-bold text-[#e060d8] transition-colors"
+                >
+                  🍣 Comprar en SushiSwap
+                </a>
+                <a
+                  href="https://dexscreener.com/polygon/0x594808de92386dd407a12c4c021b40e8d24e5e54"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-xs font-bold text-white/70 transition-colors"
+                >
+                  📈 Ver Chart
+                </a>
+                <a
+                  href="/whitepaper.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-xs font-bold text-white/70 transition-colors"
+                >
+                  📄 White Paper
+                </a>
+                <a
+                  href={`https://polygonscan.com/token/${RFLAG_ADDRESS}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-xs font-bold text-white/70 transition-colors"
+                >
+                  🔍 Polygonscan
+                </a>
+              </div>
+            </motion.div>
           </>
         )}
       </div>
