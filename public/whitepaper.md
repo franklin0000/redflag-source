@@ -272,6 +272,20 @@ Users are responsible for complying with all applicable laws and regulations in 
 |---|---|---|
 | $RFLAG Token | `0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6` | Polygon |
 | SushiSwap LP Pair | `0x594808dE92386dd407A12C4c021b40e8D24E5E54` | Polygon |
+| LP TimeLock (2 years) | `0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5` | Polygon |
+
+### Security Locks (Anti-Rug)
+
+| Action | Status | Proof |
+|---|---|---|
+| Contract Ownership Renounced | ✅ Done (2026-03-23) | [Polygonscan](https://polygonscan.com/tx/0x270309e42241b37d94285dc0c21df6c4df918281c8d3efae2c704a71259f65cb) |
+| Liquidity Locked 2 Years | ✅ Done (until 2028-03-23) | [TimeLock Contract](https://polygonscan.com/address/0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5) |
+| Smart Contract Audited Source | ✅ Verified on Sourcify | [View Source](https://repo.sourcify.dev/contracts/full_match/137/0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5/) |
+
+**What this means:**
+- **No new tokens can ever be minted** — the owner was renounced, permanently removing all admin control
+- **Liquidity cannot be removed until 2028-03-23** — all 8.1M SLP tokens are locked in a verified smart contract
+- **The TimeLock source code is public** — anyone can verify there are no backdoors
 
 ### Links
 

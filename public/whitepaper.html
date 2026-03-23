@@ -316,6 +316,8 @@
       <div class="roadmap-item done">SushiSwap liquidity pool created</div>
       <div class="roadmap-item done">DexScreener & GeckoTerminal indexed</div>
       <div class="roadmap-item done">IPFS decentralized hosting live (redflag.web3)</div>
+      <div class="roadmap-item done">Ownership renounced — no new minting possible</div>
+      <div class="roadmap-item done">Liquidity locked 2 years (until 2028-03-23)</div>
     </div>
     <div class="quarter">
       <h4>Q2 2026 — Growth</h4>
@@ -339,8 +341,52 @@
     </div>
   </section>
 
+  <section id="security">
+    <h2>9. Security &amp; Anti-Rug Proof</h2>
+    <p>RedFlag has taken permanent, irreversible security actions to protect token holders and liquidity providers from fraud.</p>
+
+    <table>
+      <tr><th>Action</th><th>Status</th><th>Date</th><th>Proof</th></tr>
+      <tr>
+        <td><strong>Ownership Renounced</strong></td>
+        <td style="color:#4ade80">✅ Complete</td>
+        <td>2026-03-23</td>
+        <td><a href="https://polygonscan.com/tx/0x270309e42241b37d94285dc0c21df6c4df918281c8d3efae2c704a71259f65cb" target="_blank">View Tx</a></td>
+      </tr>
+      <tr>
+        <td><strong>Liquidity Locked 2 Years</strong></td>
+        <td style="color:#4ade80">✅ Complete</td>
+        <td>Until 2028-03-23</td>
+        <td><a href="https://polygonscan.com/address/0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5" target="_blank">TimeLock Contract</a></td>
+      </tr>
+      <tr>
+        <td><strong>TimeLock Source Verified</strong></td>
+        <td style="color:#4ade80">✅ Complete</td>
+        <td>2026-03-23</td>
+        <td><a href="https://repo.sourcify.dev/contracts/full_match/137/0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5/" target="_blank">View Source</a></td>
+      </tr>
+    </table>
+
+    <div class="highlight">
+      <strong>What ownership renouncement means:</strong> The RFLAG contract owner has been set to
+      <code>0x0000000000000000000000000000000000000000</code> (the zero address). This is a permanent,
+      irreversible action. No one — including the original developer — can ever mint new tokens,
+      set new rewarders, or modify contract parameters again.<br><br>
+      <strong>What the liquidity lock means:</strong> All 8,103,774 SLP tokens representing the
+      RFLAG/WMATIC liquidity pool are locked in a verified smart contract until 2028-03-23.
+      Liquidity cannot be withdrawn before that date under any circumstances.
+    </div>
+
+    <table>
+      <tr><th>Contract</th><th>Address</th><th>Network</th></tr>
+      <tr><td>$RFLAG Token</td><td><code>0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6</code></td><td>Polygon</td></tr>
+      <tr><td>SushiSwap LP Pair</td><td><code>0x594808dE92386dd407A12C4c021b40e8D24E5E54</code></td><td>Polygon</td></tr>
+      <tr><td>LP TimeLock (2yr)</td><td><code>0x3D357741F340C745B0FFe6C4DC25FC42c0CeA1A5</code></td><td>Polygon</td></tr>
+    </table>
+  </section>
+
   <section id="disclaimer">
-    <h2>9. Legal Disclaimer</h2>
+    <h2>10. Legal Disclaimer</h2>
     <p>$RFLAG is a <strong>utility token</strong> — it is not a security, investment contract, or financial instrument. It is designed exclusively for use within the RedFlag platform ecosystem.</p>
     <p>Purchasing, holding, or trading $RFLAG does not represent an investment in RedFlag or entitle holders to equity, dividends, or profit sharing. The value of $RFLAG is determined solely by market forces and platform utility.</p>
     <p>Cryptocurrency investments carry significant risk including the potential loss of all invested capital. This whitepaper is for informational purposes only and does not constitute financial advice.</p>
