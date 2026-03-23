@@ -12,7 +12,7 @@ services:
       - www.redflag.u
       - redflag.web3
       - www.redflag.web3
-    buildCommand: npm install --legacy-peer-deps && (cd server && npm install) && npm run build
+    buildCommand: npm install --include=dev && (cd server && npm install) && npm run build
     startCommand: node server/index.js
     envVars:
       - key: PORT
