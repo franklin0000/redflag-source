@@ -15,58 +15,92 @@ const OPERATOR_ADDRESS = process.env.VITE_PROXY_WALLET_ADDRESS || '';
 // The markup fee requested: 1.5%
 const MARKUP_FEE_PERCENT = 0.015;
 
+// Helper: parse outcomePrices and clobTokenIds from a Gamma sub-market
+function parseSubMarket(sub) {
+  let prices = [0.5, 0.5];
+  let tokenIds = [];
+  if (!sub) return { prices, tokenIds };
+
+  if (typeof sub.outcomePrices === 'string') {
+    try { prices = JSON.parse(sub.outcomePrices).map(p => parseFloat(p)); } catch(e) {}
+  } else if (Array.isArray(sub.outcomePrices)) {
+    prices = sub.outcomePrices.map(p => parseFloat(p));
+  }
+
+  if (typeof sub.clobTokenIds === 'string') {
+    try { tokenIds = JSON.parse(sub.clobTokenIds); } catch(e) {}
+  } else if (Array.isArray(sub.clobTokenIds)) {
+    tokenIds = sub.clobTokenIds;
+  }
+
+  return { prices, tokenIds };
+}
+
+// Helper: normalize a Gamma event to a flat market object
+function normalizeEvent(event) {
+  // For multi-outcome events, find the sub-market with the most balanced price (most tradeable)
+  const subs = Array.isArray(event.markets) ? event.markets : [];
+
+  let bestSub = subs[0] || null;
+  let bestPrices = [0.5, 0.5];
+  let bestTokenIds = [];
+
+  for (const sub of subs) {
+    const { prices, tokenIds } = parseSubMarket(sub);
+    const yp = prices[0] ?? 0.5;
+    // Prefer sub-markets with live prices (not 0 or 1)
+    if (yp > 0.01 && yp < 0.99) {
+      bestSub = sub;
+      bestPrices = prices;
+      bestTokenIds = tokenIds;
+      break;
+    }
+    // Fallback: keep first sub
+    if (sub === subs[0]) {
+      bestPrices = prices;
+      bestTokenIds = tokenIds;
+    }
+  }
+
+  const yesPrice = bestPrices[0] ?? 0.5;
+  const noPrice = bestPrices[1] ?? (1 - yesPrice);
+
+  return {
+    id: event.id,
+    title: event.title,
+    description: (event.description || '').slice(0, 500),
+    image: event.image,
+    volume: parseFloat(event.volume || 0),
+    liquidity: parseFloat(event.liquidity || 0),
+    yesPrice: parseFloat(yesPrice.toFixed(4)),
+    noPrice: parseFloat(noPrice.toFixed(4)),
+    tokenId: bestTokenIds[0] || null,
+    noTokenId: bestTokenIds[1] || null,
+    conditionId: bestSub ? bestSub.conditionId : null,
+    active: event.active,
+    endDate: event.endDate,
+    category: event.tags?.[0]?.label || 'General'
+  };
+}
+
 // Fetch active markets from Polymarket Gamma API (normalized)
 router.get('/markets', async (req, res) => {
   try {
-    const url = 'https://gamma-api.polymarket.com/events?active=true&closed=false&limit=20';
+    // Fetch more events so after filtering we have enough live markets
+    // Sort by volume24hr descending to get the most active markets first
+    const url = 'https://gamma-api.polymarket.com/events?active=true&closed=false&limit=50&order=volume24hr&ascending=false';
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to fetch from polymarket gamma');
 
     const events = await response.json();
 
-    // Normalize: flatten nested markets[0] prices into top-level fields
-    const normalized = events.map(event => {
-      const sub = Array.isArray(event.markets) ? event.markets[0] : null;
-      
-      let prices = [0.5, 0.5];
-      let tokenIds = [];
-      
-      if (sub) {
-        if (typeof sub.outcomePrices === 'string') {
-          try { prices = JSON.parse(sub.outcomePrices).map(p => parseFloat(p)); } catch(e){}
-        } else if (Array.isArray(sub.outcomePrices)) {
-          prices = sub.outcomePrices.map(p => parseFloat(p));
-        }
+    const normalized = events.map(normalizeEvent);
 
-        if (typeof sub.clobTokenIds === 'string') {
-          try { tokenIds = JSON.parse(sub.clobTokenIds); } catch(e){}
-        } else if (Array.isArray(sub.clobTokenIds)) {
-          tokenIds = sub.clobTokenIds;
-        }
-      }
+    // Filter: only keep markets with live trading prices (not fully resolved 0/1)
+    const live = normalized.filter(m => m.yesPrice > 0.01 && m.yesPrice < 0.99);
 
-      const yesPrice = prices[0] ?? 0.5;
-      const noPrice = prices[1] ?? (1 - yesPrice);
-
-      return {
-        id: event.id,
-        title: event.title,
-        description: (event.description || '').slice(0, 500),
-        image: event.image,
-        volume: event.volume,
-        liquidity: event.liquidity,
-        yesPrice: parseFloat(yesPrice.toFixed(4)),
-        noPrice: parseFloat(noPrice.toFixed(4)),
-        tokenId: tokenIds[0] || null,
-        noTokenId: tokenIds[1] || null,
-        conditionId: sub ? sub.conditionId : null,
-        active: event.active,
-        endDate: event.endDate,
-        category: event.tags?.[0]?.label || 'General'
-      };
-    });
-
-    res.json(normalized);
+    // Return top 20 live markets (or all if fewer)
+    res.json(live.slice(0, 20));
   } catch (error) {
     console.error('Error fetching polymarket markets:', error.message);
     res.status(500).json({ error: 'Failed to fetch markets' });
@@ -81,39 +115,14 @@ router.get('/markets/:id', async (req, res) => {
     if (!response.ok) return res.status(404).json({ error: 'Market not found' });
     const event = await response.json();
 
-    const sub = Array.isArray(event.markets) ? event.markets[0] : null;
-    let prices = [0.5, 0.5];
-    let tokenIds = [];
-
-    if (sub) {
-      const raw = sub.outcomePrices;
-      if (typeof raw === 'string') { try { prices = JSON.parse(raw).map(p => parseFloat(p)); } catch(e){} }
-      else if (Array.isArray(raw)) { prices = raw.map(p => parseFloat(p)); }
-
-      const tids = sub.clobTokenIds;
-      if (typeof tids === 'string') { try { tokenIds = JSON.parse(tids); } catch(e){} }
-      else if (Array.isArray(tids)) { tokenIds = tids; }
-    }
-
-    const yesPrice = prices[0] ?? 0.5;
-    const noPrice = prices[1] ?? (1 - yesPrice);
+    const normalized = normalizeEvent(event);
+    const subs = Array.isArray(event.markets) ? event.markets : [];
+    const sub = subs[0] || null;
 
     res.json({
-      id: event.id,
-      title: event.title,
+      ...normalized,
       description: event.description || '',
-      image: event.image,
-      volume: event.volume,
       volume24hr: event.volume24hr,
-      liquidity: event.liquidity,
-      yesPrice: parseFloat(yesPrice.toFixed(4)),
-      noPrice: parseFloat(noPrice.toFixed(4)),
-      tokenId: tokenIds[0] || null,
-      noTokenId: tokenIds[1] || null,
-      conditionId: sub?.conditionId || null,
-      active: event.active,
-      endDate: event.endDate,
-      category: event.tags?.[0]?.label || 'General',
       outcomes: sub?.outcomes || ['Yes', 'No'],
     });
   } catch (error) {
