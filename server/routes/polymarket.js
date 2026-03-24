@@ -27,12 +27,26 @@ router.get('/markets', async (req, res) => {
     // Normalize: flatten nested markets[0] prices into top-level fields
     const normalized = events.map(event => {
       const sub = Array.isArray(event.markets) ? event.markets[0] : null;
-      const prices = sub?.outcomePrices
-        ? sub.outcomePrices.map(p => parseFloat(p))
-        : [0.5, 0.5];
+      
+      let prices = [0.5, 0.5];
+      let tokenIds = [];
+      
+      if (sub) {
+        if (typeof sub.outcomePrices === 'string') {
+          try { prices = JSON.parse(sub.outcomePrices).map(p => parseFloat(p)); } catch(e){}
+        } else if (Array.isArray(sub.outcomePrices)) {
+          prices = sub.outcomePrices.map(p => parseFloat(p));
+        }
+
+        if (typeof sub.clobTokenIds === 'string') {
+          try { tokenIds = JSON.parse(sub.clobTokenIds); } catch(e){}
+        } else if (Array.isArray(sub.clobTokenIds)) {
+          tokenIds = sub.clobTokenIds;
+        }
+      }
+
       const yesPrice = prices[0] ?? 0.5;
       const noPrice = prices[1] ?? (1 - yesPrice);
-      const tokenIds = sub?.clobTokenIds || [];
 
       return {
         id: event.id,
@@ -111,6 +125,19 @@ router.post('/proxy-trade', requireAuth, async (req, res) => {
 
     if (!operatorWallet) {
       return res.status(503).json({ error: 'Polymarket operator not configured' });
+    }
+
+    // SECURITY: Verify the user's USDC transfer txHash on-chain!
+    console.log(`[Polymarket] Verifying user txHash securely: ${txHash}`);
+    try {
+      const receipt = await operatorWallet.provider.waitForTransaction(txHash, 1, 15000); // 15 seconds max
+      if (receipt.status !== 1) {
+        return res.status(400).json({ error: 'Transaction failed on Polygon network' });
+      }
+      console.log(`[Polymarket] ✅ txHash verified. Executing proxy order...`);
+    } catch (err) {
+      console.error(`[Polymarket] txHash verification error:`, err);
+      return res.status(400).json({ error: 'Could not verify the USDC transaction on-chain' });
     }
 
     // Place the order securely using the proxy backend wallet
