@@ -3,7 +3,9 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import { reportsService } from '../services/reportsService';
-
+import { useAccount, useWriteContract, useReadContract } from 'wagmi';
+import { parseEther } from 'viem';
+import { RFLAG_ADDRESS, RADAR_CONTRACT_ADDRESS, ERC20_ABI, REDFLAG_RADAR_ABI } from '../config/contracts';
 export default function NewReport() {
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
@@ -35,6 +37,28 @@ export default function NewReport() {
         }
     };
 
+    // Web3 State
+    const { address } = useAccount();
+    const { writeContractAsync } = useWriteContract();
+
+    // Read Allowance
+    const { data: allowance } = useReadContract({
+        address: RFLAG_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [address, RADAR_CONTRACT_ADDRESS],
+        query: { enabled: !!address }
+    });
+
+    // Read Balance
+    const { data: balance } = useReadContract({
+        address: RFLAG_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [address],
+        query: { enabled: !!address }
+    });
+
     const handleSubmit = async () => {
         if (!name.trim()) {
             toast.warning("Please provide the person's name.");
@@ -42,9 +66,51 @@ export default function NewReport() {
         }
 
         try {
+            if (!address) {
+                toast.error("Por favor, conecta tu wallet primero.");
+                return;
+            }
+
+            const cost = parseEther('50'); // 50 $RFLAG
+
+            if (!balance || balance < cost) {
+                toast.error("Balance insuficiente de $RFLAG. Por favor compra más.");
+                return;
+            }
+
             setStatus('uploading');
 
-            // 1. Upload Photos (Try online, but don't block submission if it fails)
+            // 1. Blockchain Payment Flow
+            try {
+                if (!allowance || allowance < cost) {
+                    toast.info("Aprobando 50 $RFLAG para el Radar...");
+                    const approveTx = await writeContractAsync({
+                        address: RFLAG_ADDRESS,
+                        abi: ERC20_ABI,
+                        functionName: 'approve',
+                        args: [RADAR_CONTRACT_ADDRESS, cost],
+                    });
+                    // Note: In production we should wait for the receipt here.
+                    toast.success("Aprobación enviada. Confirmando...");
+                }
+
+                toast.info("Pagando publicación en el Radar...");
+                const reportTx = await writeContractAsync({
+                    address: RADAR_CONTRACT_ADDRESS,
+                    abi: REDFLAG_RADAR_ABI,
+                    functionName: 'reportRedFlag',
+                    args: [name || 'Unknown Location', details || 'No description'],
+                });
+                
+                toast.success("Pago on-chain confirmado!");
+            } catch (web3Error) {
+                console.error("Web3 Error:", web3Error);
+                toast.error("Fallo el pago on-chain. El reporte no fue publicado.");
+                setStatus('idle');
+                return; // Stop here, do not save off-chain
+            }
+
+            // 2. Upload Photos (Try online, but don't block submission if it fails)
             let photoUrls = [];
             try {
                 photoUrls = await Promise.all(
@@ -52,17 +118,11 @@ export default function NewReport() {
                 );
             } catch (uploadError) {
                 console.warn("Photo upload failed, proceeding with offline submission:", uploadError);
-                // If upload fails, we can't save the remote URL.
-                // We could potentially save the local file/blob to IndexedDB, but for now we'll just skip the photo
-                // or rely on reportsService to handle offline logic if it supported local blobs (which it currently simplifies).
-                // Let's just create the report without the remote photo URL for now, or use a placeholder.
-                // Better: Pass the File object itself to createReport if we want to handle it (but createReport expects URL).
-                // For this fix: Just proceed. The report will be created without photos online, or offline.
             }
 
             setStatus('submitting');
 
-            // 2. Create Report
+            // 3. Create Report in off-chain DB
 
             await reportsService.createReport({
                 name,
@@ -70,7 +130,7 @@ export default function NewReport() {
                 details,
                 selectedFlags,
                 photos: photoUrls,
-                severity: photoUrls.length > 0 ? 'high' : 'medium' // Simple logic
+                severity: photoUrls.length > 0 ? 'high' : 'medium' 
             });
 
             setStatus('success');
@@ -214,28 +274,7 @@ export default function NewReport() {
                     </div>
                 </section>
 
-                {/* Privacy Notice */}
-                <section className="mt-8 mb-4">
-                    <div className="bg-primary/5 border border-primary/10 rounded-lg p-4 flex items-start gap-3">
-                        <span className="material-icons text-primary/70 text-lg mt-0.5">info</span>
-                        <div>
-                            <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Community Guidelines</h4>
-                            <p className="text-xs font-light text-slate-600 dark:text-slate-400 leading-relaxed">
-                                All reports are community-driven. Please ensure all information provided is accurate and truthful.
-                            </p>
-                        </div>
-                    </div>
-                </section>
 
-                {/* Submit */}
-                <button
-                    onClick={handleSubmit}
-                    disabled={status === 'uploading' || status === 'submitting'}
-                    className={`w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl shadow-lg shadow-primary/25 transition-all flex items-center justify-center gap-2 ${status === 'uploading' || status === 'submitting' ? 'opacity-70 cursor-not-allowed' : ''}`}
-                >
-                    <span>{status === 'uploading' ? 'Uploading Photos...' : status === 'submitting' ? 'Submitting Report...' : 'Submit Report'}</span>
-                    {status === 'idle' && <span className="material-icons text-sm">send</span>}
-                </button>
             </main>
         </div>
     );

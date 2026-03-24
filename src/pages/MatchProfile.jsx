@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import MarketCard from '../components/Polymarket/MarketCard';
-import RflagBetting from '../components/Polymarket/RflagBetting';
-import Leaderboard from '../components/Polymarket/Leaderboard';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -236,18 +233,6 @@ export default function MatchProfile() {
             </div>
           </div>
         )}
-
-        {/* Polymarket Hub */}
-        <div className="mt-8 border-t border-gray-800 pt-6">
-          <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-            <span className="text-pink-500">📈</span> Live Predictions
-          </h2>
-          <p className="text-sm text-gray-400 mb-4">Trade on community outcomes or use $RFLAG if markets are pending.</p>
-          
-          <MarketCard market={{ title: `Will ${profile.name} go on a 2nd date?` }} />
-          <RflagBetting eventName={`${profile.name}'s dating success`} />
-          <Leaderboard />
-        </div>
 
       </div>
     </div>

@@ -12,6 +12,7 @@ import {
   RFLAG_ADDRESS,
   RFLAG_ABI,
 } from '../services/rflagToken';
+import SwapRflagWidget from '../components/Web3/SwapRflagWidget';
 
 const IS_DEPLOYED = RFLAG_ADDRESS !== '0x0000000000000000000000000000000000000000';
 
@@ -468,6 +469,13 @@ export default function TokenWallet() {
                 </div>
                 <span className="text-green-400 text-xs">Ver →</span>
               </a>
+            </motion.div>
+
+            {/* In-App Native Swap */}
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }}
+            >
+              <SwapRflagWidget />
             </motion.div>
 
             {/* Buy / Trade Links */}

@@ -145,12 +145,14 @@ Users can perform daily safety check-ins to confirm their wellbeing. Each check-
 |---|---|
 | **Name** | RedFlag Token |
 | **Symbol** | $RFLAG |
-| **Network** | Polygon (chainId 137) |
+| **Network** | Polygon PoS (chainId 137) |
 | **Contract** | `0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6` |
-| **Total Supply** | 600,000,000,000 (600 Billion) |
+| **Total Supply** | 600,000,000,000 (600 Billion) — fixed, no new minting possible |
+| **Holders** | 6 |
 | **Decimals** | 18 |
 | **Type** | ERC-20 Utility Token |
-| **DEX** | SushiSwap V2 |
+| **DEX** | SushiSwap V2 (RFLAG/WPOL) |
+| **Explorer** | [Polygonscan](https://polygonscan.com/token/0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6) |
 
 ### 6.2 Earning $RFLAG
 
@@ -184,11 +186,13 @@ The burn mechanism creates **deflationary pressure** over time as the user base 
 
 | Allocation | Amount | Percentage | Purpose |
 |---|---|---|---|
-| Community Rewards | 240,000,000,000 | 40% | Earned in-app by users |
-| Team & Development | 180,000,000,000 | 30% | Project development, maintenance |
-| Ecosystem & Partnerships | 120,000,000,000 | 20% | Integrations, exchange listings |
-| Liquidity | 60,000,000,000 | 10% | DEX liquidity pools |
-| **Total** | **600,000,000,000** | **100%** | |
+| Community Rewards | 240,000,000,000 | 40% | Earned in-app by users (safety actions) |
+| Team & Development | 180,000,000,000 | 30% | Project development & maintenance |
+| Ecosystem & Partnerships | 120,000,000,000 | 20% | Exchange listings & integrations |
+| Liquidity | 60,000,000,000 | 10% | SushiSwap DEX liquidity pool |
+| **Total** | **600,000,000,000** | **100%** | Fixed supply — confirmed on [Polygonscan](https://polygonscan.com/token/0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6) |
+
+> Supply confirmed on-chain. Ownership renounced 2026-03-23 — no additional tokens can ever be minted.
 
 ### 7.2 Real-time Market Data & Liquidity
 
