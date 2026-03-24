@@ -147,7 +147,7 @@ Users can perform daily safety check-ins to confirm their wellbeing. Each check-
 | **Symbol** | $RFLAG |
 | **Network** | Polygon (chainId 137) |
 | **Contract** | `0x06436bf6E71964A99bD4078043aa4cDfA0eadEe6` |
-| **Total Supply** | 1,000,000,000,000 (1 Trillion) |
+| **Total Supply** | 600,000,000,000 (600 Billion) |
 | **Decimals** | 18 |
 | **Type** | ERC-20 Utility Token |
 | **DEX** | SushiSwap V2 |
@@ -184,18 +184,20 @@ The burn mechanism creates **deflationary pressure** over time as the user base 
 
 | Allocation | Amount | Percentage | Purpose |
 |---|---|---|---|
-| Community Rewards | 400,000,000,000 | 40% | Earned in-app by users |
-| Team & Development | 300,000,000,000 | 30% | Project development, maintenance |
-| Ecosystem & Partnerships | 200,000,000,000 | 20% | Integrations, exchange listings |
-| Liquidity | 100,000,000,000 | 10% | DEX liquidity pools |
-| **Total** | **1,000,000,000,000** | **100%** | |
+| Community Rewards | 240,000,000,000 | 40% | Earned in-app by users |
+| Team & Development | 180,000,000,000 | 30% | Project development, maintenance |
+| Ecosystem & Partnerships | 120,000,000,000 | 20% | Integrations, exchange listings |
+| Liquidity | 60,000,000,000 | 10% | DEX liquidity pools |
+| **Total** | **600,000,000,000** | **100%** | |
 
-### 7.2 Initial Liquidity
+### 7.2 Real-time Market Data & Liquidity
 
-At launch:
-- **~1,284 MATIC** paired with **~51B RFLAG** on SushiSwap V2
-- LP tokens held by the project treasury
-- No liquidity lock period required (community-governed)
+Current on-chain metrics (via CoinMarketCap DEX):
+- **Current Price:** $0.000000002321 USD
+- **Fully Diluted Valuation (FDV):** ~$1.3K USD
+- **Pool Liquidity:** ~$118.1 USD
+- **Primary DEX:** SushiSwap V2 (RFLAG/WPOL)
+- **LP Tokens:** Held by the project treasury and locked via TimeLock.
 
 ### 7.3 Deflationary Mechanics
 
