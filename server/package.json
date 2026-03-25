@@ -4,12 +4,11 @@
   "description": "RedFlag API server (Stripe + Sumsub)",
   "main": "index.js",
   "engines": {
-    "node": "18"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js",
-    "postinstall": "pip3 install -r ../server/requirements.txt || pip install -r ../server/requirements.txt || true"
+    "dev": "node --watch index.js"
   },
   "dependencies": {
     "@polymarket/clob-client": "^5.8.0",
