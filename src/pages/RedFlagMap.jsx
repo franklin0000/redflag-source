@@ -24,10 +24,15 @@ export default function RedFlagMap() {
     const [selectedPlace, setSelectedPlace] = useState(null);
     const [selectedFlag, setSelectedFlag] = useState(null);
     const [isAddingFlag, setIsAddingFlag] = useState(false);
-    const [newFlagType, setNewFlagType] = useState('red');
+    const [personName, setPersonName] = useState('');
+    const [personPlatform, setPersonPlatform] = useState('');
+    const [personCategory, setPersonCategory] = useState('Fake Profile');
     const [newFlagComment, setNewFlagComment] = useState('');
     const [flagMediaFiles, setFlagMediaFiles] = useState([]);
     const [isUploading, setIsUploading] = useState(false);
+
+    const PLATFORMS = ['Tinder', 'Bumble', 'Hinge', 'Instagram', 'Facebook', 'WhatsApp', 'Grindr', 'Other'];
+    const CATEGORIES = ['Fake Profile', 'Catfishing', 'Scammer', 'Harassment', 'Infidelity', 'Violence', 'Other'];
 
     const mapRef = useRef();
 
@@ -78,31 +83,34 @@ export default function RedFlagMap() {
     };
 
     const handleSubmitFlag = async () => {
-        if (!selectedPlace || (!newFlagComment.trim() && flagMediaFiles.length === 0)) return;
+        if (!selectedPlace || !personName.trim()) return;
         setIsUploading(true);
         try {
             const uploadedMedia = [];
             if (flagMediaFiles.length > 0) {
-                toast.info('Uploading media...');
+                toast.info('Uploading evidence...');
                 for (const file of flagMediaFiles) {
                     const url = await uploadFile(file, 'flags');
                     const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'document';
                     uploadedMedia.push({ url, type, name: file.name });
                 }
             }
+            const comment = `PLATFORM:${personPlatform || 'Unknown'}\nCATEGORY:${personCategory}\n\n${newFlagComment}`;
             await locationFlagsApi.create({
                 place_id: selectedPlace.place_id,
-                place_name: selectedPlace.name,
+                place_name: personName.trim(),
                 lat: selectedPlace.lat,
                 lng: selectedPlace.lng,
-                flag_type: newFlagType,
-                comment: newFlagComment,
+                flag_type: 'red',
+                comment,
                 media: uploadedMedia,
             });
-            toast.success('Flag dropped successfully!');
-            setIsAddingFlag(false); setNewFlagComment(''); setFlagMediaFiles([]); setSelectedPlace(null);
+            toast.success('RedFlag submitted anonymously! 🔒');
+            setIsAddingFlag(false);
+            setPersonName(''); setPersonPlatform(''); setPersonCategory('Fake Profile');
+            setNewFlagComment(''); setFlagMediaFiles([]); setSelectedPlace(null);
         } catch (err) {
-            toast.error('Failed to drop flag.');
+            toast.error('Failed to submit RedFlag.');
             console.error(err);
         } finally {
             setIsUploading(false);
@@ -180,7 +188,7 @@ export default function RedFlagMap() {
                     </button>
                     <div className="relative flex-1">
                         <span className="absolute inset-y-0 left-4 flex items-center text-gray-400"><span className="material-icons">search</span></span>
-                        <input type="text" placeholder="Find a place to review..." value={searchQuery}
+                        <input type="text" placeholder="Search where you met this person..." value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full pl-12 pr-4 py-3 rounded-2xl bg-black/60 backdrop-blur-xl border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary shadow-2xl"
                         />
@@ -213,20 +221,20 @@ export default function RedFlagMap() {
                     <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }}
                         className="absolute bottom-0 inset-x-0 z-10 p-4 pointer-events-none"
                     >
-                        <div className="bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl pointer-events-auto mx-auto max-w-lg">
+                        <div className="bg-gray-900/95 backdrop-blur-xl border border-red-500/20 rounded-3xl p-6 shadow-2xl pointer-events-auto mx-auto max-w-lg">
                             <div className="flex justify-between items-start mb-4">
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white leading-tight">{selectedPlace.name}</h2>
-                                    <p className="text-gray-400 text-sm mt-1">Found via Mapbox</p>
+                                    <p className="text-[11px] text-gray-400 uppercase tracking-widest mb-1">📍 Location selected</p>
+                                    <h2 className="text-lg font-bold text-white leading-tight">{selectedPlace.name}</h2>
                                 </div>
                                 <button onClick={() => setSelectedPlace(null)} className="p-2 bg-white/5 rounded-full hover:bg-white/10">
                                     <span className="material-icons text-gray-400">close</span>
                                 </button>
                             </div>
                             <button onClick={() => setIsAddingFlag(true)}
-                                className="w-full py-4 bg-primary text-white font-bold rounded-2xl shadow-[0_0_20px_rgba(212,17,180,0.4)] flex items-center justify-center gap-2 transition-transform active:scale-95"
+                                className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl shadow-[0_0_20px_rgba(239,68,68,0.3)] flex items-center justify-center gap-2 transition-transform active:scale-95"
                             >
-                                <span className="material-icons">add_location</span> Drop a Flag Here
+                                <span className="material-icons">person_off</span> RedFlag a Person Here
                             </button>
                         </div>
                     </motion.div>
@@ -239,59 +247,97 @@ export default function RedFlagMap() {
                     <motion.div initial={{ opacity: 0, y: '100%' }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: '100%' }}
                         className="absolute inset-0 z-50 bg-black/50 backdrop-blur-md flex flex-col justify-end"
                     >
-                        <div className="bg-gray-900 border-t border-white/10 rounded-t-[40px] p-6 pb-12 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[80vh] flex flex-col">
-                            <div className="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6"></div>
-                            <div className="flex items-center justify-between mb-6">
+                        <div className="bg-gray-900 border-t border-red-500/20 rounded-t-[40px] p-6 pb-12 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[90vh] flex flex-col overflow-y-auto">
+                            <div className="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6 flex-shrink-0"></div>
+                            <div className="flex items-center justify-between mb-5 flex-shrink-0">
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Review Place</h2>
-                                    <p className="text-gray-400 text-sm">{selectedPlace.name}</p>
+                                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                                        <span className="material-icons text-red-500">person_off</span> RedFlag a Person
+                                    </h2>
+                                    <p className="text-gray-400 text-xs mt-1">📍 {selectedPlace.name} · 🔒 Anonymous</p>
                                 </div>
                                 <button onClick={() => setIsAddingFlag(false)} className="p-2 bg-gray-800 rounded-full text-gray-400">
                                     <span className="material-icons">close</span>
                                 </button>
                             </div>
-                            <div className="flex gap-4 mb-6">
-                                {['red', 'green'].map(type => (
-                                    <button key={type} onClick={() => setNewFlagType(type)}
-                                        className={`flex-1 py-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${newFlagType === type
-                                            ? type === 'red' ? 'bg-red-900/40 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-green-900/40 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.2)]'
-                                            : 'bg-gray-800 border-transparent text-gray-400'}`}
-                                    >
-                                        <span className={`material-icons text-3xl ${newFlagType === type ? (type === 'red' ? 'text-red-500' : 'text-green-500') : ''}`}>flag</span>
-                                        <span className="font-bold">{type === 'red' ? 'Red Flag' : 'Green Flag'}</span>
-                                    </button>
-                                ))}
+
+                            {/* Person Name */}
+                            <div className="mb-4">
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Person's Name *</label>
+                                <div className="relative">
+                                    <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-lg">person</span>
+                                    <input
+                                        value={personName}
+                                        onChange={e => setPersonName(e.target.value)}
+                                        placeholder="e.g. John Doe"
+                                        className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-red-500/50 text-sm"
+                                    />
+                                </div>
                             </div>
-                            <textarea value={newFlagComment} onChange={(e) => setNewFlagComment(e.target.value)}
-                                placeholder="Why are you giving this place a flag? What happened?"
-                                className={`w-full flex-1 rounded-2xl p-4 bg-gray-800 border focus:outline-none resize-none text-white ${newFlagType === 'red' ? 'focus:border-red-500/50' : 'focus:border-green-500/50'} border-transparent`}
-                            />
-                            <div className="mt-4">
+
+                            {/* Platform */}
+                            <div className="mb-4">
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Platform / App</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {PLATFORMS.map(p => (
+                                        <button key={p} onClick={() => setPersonPlatform(p)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${personPlatform === p ? 'bg-red-600 border-red-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400 hover:border-white/30'}`}
+                                        >{p}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Category */}
+                            <div className="mb-4">
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Type of RedFlag</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {CATEGORIES.map(c => (
+                                        <button key={c} onClick={() => setPersonCategory(c)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${personCategory === c ? 'bg-red-600 border-red-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400 hover:border-white/30'}`}
+                                        >{c}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Details */}
+                            <div className="mb-4 flex-1">
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">What happened?</label>
+                                <textarea value={newFlagComment} onChange={e => setNewFlagComment(e.target.value)}
+                                    placeholder="Describe the situation so others can stay safe..."
+                                    rows={4}
+                                    className="w-full rounded-xl p-4 bg-gray-800 border border-white/10 focus:outline-none focus:border-red-500/50 resize-none text-white text-sm placeholder-gray-500"
+                                />
+                            </div>
+
+                            {/* Evidence */}
+                            <div className="mb-5">
                                 <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer hover:text-white transition-colors">
-                                    <span className="material-icons">attach_file</span> Add Photos, Audio, or Docs
-                                    <input type="file" multiple accept="image/*,audio/*,.pdf,.doc,.docx" className="hidden"
-                                        onChange={(e) => setFlagMediaFiles(prev => [...prev, ...Array.from(e.target.files)])}
+                                    <span className="material-icons text-lg">add_a_photo</span> Add Evidence Photos
+                                    <input type="file" multiple accept="image/*" className="hidden"
+                                        onChange={e => setFlagMediaFiles(prev => [...prev, ...Array.from(e.target.files)])}
                                     />
                                 </label>
                                 {flagMediaFiles.length > 0 && (
-                                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
                                         {flagMediaFiles.map((f, i) => (
-                                            <div key={i} className="flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-white/5 shrink-0">
-                                                <span className="material-icons text-sm text-primary">{f.type.startsWith('image/') ? 'image' : f.type.startsWith('audio/') ? 'audiotrack' : 'description'}</span>
-                                                <span className="text-xs text-gray-300 truncate max-w-[100px]">{f.name}</span>
-                                                <button onClick={() => setFlagMediaFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-gray-500 hover:text-red-500 ml-1">
-                                                    <span className="material-icons text-[14px]">close</span>
+                                            <div key={i} className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-white/10">
+                                                <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+                                                <button onClick={() => setFlagMediaFiles(prev => prev.filter((_, idx) => idx !== i))}
+                                                    className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5">
+                                                    <span className="material-icons text-white text-[12px]">close</span>
                                                 </button>
                                             </div>
                                         ))}
                                     </div>
                                 )}
                             </div>
+
                             <button onClick={handleSubmitFlag}
-                                disabled={(!newFlagComment.trim() && flagMediaFiles.length === 0) || isUploading}
-                                className={`w-full py-4 mt-6 rounded-2xl font-bold transition-all ${((!newFlagComment.trim() && flagMediaFiles.length === 0) || isUploading) ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : newFlagType === 'red' ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg' : 'bg-green-600 hover:bg-green-700 text-white shadow-lg'}`}
+                                disabled={!personName.trim() || isUploading}
+                                className="w-full py-4 rounded-2xl font-bold transition-all flex-shrink-0 flex items-center justify-center gap-2 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-900/30"
                             >
-                                {isUploading ? 'Uploading...' : 'Drop Flag'}
+                                <span className="material-icons">flag</span>
+                                {isUploading ? 'Uploading...' : 'Submit RedFlag Anonymously'}
                             </button>
                         </div>
                     </motion.div>
@@ -304,17 +350,26 @@ export default function RedFlagMap() {
                     <motion.div initial={{ opacity: 0, scale: 0.9, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 50 }}
                         className="absolute bottom-6 inset-x-4 z-10 pointer-events-none"
                     >
-                        <div className={`mx-auto max-w-md rounded-3xl p-6 shadow-2xl pointer-events-auto border backdrop-blur-xl ${selectedFlag.flag_type === 'red' ? 'bg-red-950/90 border-red-500/30' : 'bg-green-950/90 border-green-500/30'}`}>
+                        <div className="mx-auto max-w-md rounded-3xl p-6 shadow-2xl pointer-events-auto border backdrop-blur-xl bg-red-950/90 border-red-500/30">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${selectedFlag.flag_type === 'red' ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'}`}>
-                                        <span className="material-icons">{selectedFlag.flag_type === 'red' ? 'warning' : 'verified'}</span>
+                                    <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                                        <span className="material-icons text-red-500">person_off</span>
                                     </div>
                                     <div>
                                         <h3 className="text-xl font-bold text-white">{selectedFlag.place_name}</h3>
-                                        <p className="text-xs text-gray-300">
-                                            {selectedFlag.flag_type === 'red' ? 'Reported Red Flag' : 'Reported Green Flag'} • {new Date(selectedFlag.created_at).toLocaleDateString()}
-                                        </p>
+                                        {(() => {
+                                            const lines = (selectedFlag.comment || '').split('\n');
+                                            const platform = lines[0]?.replace('PLATFORM:', '').trim();
+                                            const category = lines[1]?.replace('CATEGORY:', '').trim();
+                                            return (
+                                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                    {platform && <span className="text-[10px] bg-gray-700 text-gray-300 rounded-full px-2 py-0.5">{platform}</span>}
+                                                    {category && <span className="text-[10px] bg-red-900/50 text-red-400 border border-red-500/20 rounded-full px-2 py-0.5">{category}</span>}
+                                                    <span className="text-[10px] text-gray-500">{new Date(selectedFlag.created_at).toLocaleDateString()}</span>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                                 <button onClick={() => setSelectedFlag(null)} className="p-1 bg-black/20 rounded-full hover:bg-black/40">
@@ -322,7 +377,9 @@ export default function RedFlagMap() {
                                 </button>
                             </div>
                             <div className="bg-black/30 rounded-2xl p-4 border border-white/5 max-h-60 overflow-y-auto no-scrollbar">
-                                <p className="text-white text-sm whitespace-pre-wrap">{selectedFlag.comment}</p>
+                                <p className="text-white text-sm whitespace-pre-wrap">{
+                                    (selectedFlag.comment || '').split('\n').slice(3).join('\n').trim() || (selectedFlag.comment || '')
+                                }</p>
                                 {selectedFlag.media && selectedFlag.media.length > 0 && (
                                     <div className="mt-4 space-y-3">
                                         <div className="h-px bg-white/10 w-full mb-3"></div>
