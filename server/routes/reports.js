@@ -11,10 +11,9 @@ router.get('/', optionalAuth, async (req, res) => {
     let where = category ? `WHERE r.category = $3` : '';
     if (category) params.push(category);
     const { rows } = await db.query(
-      `SELECT r.*, u.name as reporter_name, u.avatar_url as reporter_avatar,
-              u.is_verified as reporter_verified
+      `SELECT r.id, r.reported_name, r.platform, r.description, r.category,
+              r.evidence_urls, r.upvotes, r.created_at
        FROM reports r
-       LEFT JOIN users u ON u.id = r.reporter_id
        ${where}
        ORDER BY r.created_at DESC LIMIT $1 OFFSET $2`,
       params
@@ -97,10 +96,9 @@ router.get('/count', optionalAuth, async (req, res) => {
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT r.*, u.name as reporter_name, u.avatar_url as reporter_avatar,
-              u.is_verified as reporter_verified
+      `SELECT r.id, r.reported_name, r.platform, r.description, r.category,
+              r.evidence_urls, r.upvotes, r.created_at
        FROM reports r
-       LEFT JOIN users u ON u.id = r.reporter_id
        WHERE r.id = $1`,
       [req.params.id]
     );
@@ -117,9 +115,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.get('/:id/comments', optionalAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT c.*, u.name as user_name, u.avatar_url as user_avatar
+      `SELECT c.id, c.report_id, c.content, c.upvotes, c.created_at
        FROM comments c
-       LEFT JOIN users u ON u.id = c.user_id
        WHERE c.report_id = $1
        ORDER BY c.created_at ASC`,
       [req.params.id]
@@ -140,7 +137,7 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
        VALUES ($1, $2, $3) RETURNING *`,
       [req.user.id, req.params.id, content.trim()]
     );
-    const comment = { ...rows[0], user_name: req.user.name, user_avatar: req.user.avatar_url };
+    const comment = { ...rows[0] };
     res.status(201).json(comment);
   } catch (err) {
     res.status(500).json({ error: err.message });

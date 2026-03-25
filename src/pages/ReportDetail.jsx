@@ -201,26 +201,18 @@ export default function ReportDetail() {
                 {/* Report Card */}
                 <div className="px-4 pt-4">
                     <div className="bg-white dark:bg-[#2d1b2a] rounded-2xl overflow-hidden border border-gray-100 dark:border-white/5 shadow-sm">
-                        {/* Reporter Info */}
+                        {/* Reporter Info — always anonymous */}
                         <div className="p-4 flex items-center gap-3 border-b border-gray-100 dark:border-white/5">
-                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-primary flex items-center justify-center text-white font-bold text-sm">
-                                {report.initials}
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-gray-500 to-gray-700 flex items-center justify-center text-white">
+                                <span className="material-icons text-xl">person</span>
                             </div>
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm font-semibold">{report.user}</span>
-                                    {report.verified && (
-                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-500">✓ Verified</span>
-                                    )}
+                                    <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">Anonymous</span>
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/10 text-gray-400 border border-gray-500/20">🔒 Protected</span>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
                                     <span>{getTimeAgo(report.timestamp)}</span>
-                                    {report.location && (
-                                        <span className="flex items-center gap-0.5">
-                                            <span className="material-icons text-[10px]">location_on</span>
-                                            {report.location}
-                                        </span>
-                                    )}
                                 </div>
                             </div>
                             <div className="text-right">
@@ -304,12 +296,12 @@ export default function ReportDetail() {
                             {comments.map((comment) => (
                                 <div key={comment.id} className="bg-white dark:bg-[#2d1b2a] rounded-xl p-3.5 border border-gray-100 dark:border-white/5">
                                     <div className="flex items-start gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
-                                            {comment.initials || (comment.user?.name || comment.user || 'AN').substring(0, 2).toUpperCase()}
+                                        <div className="w-8 h-8 rounded-full bg-gray-600/40 flex items-center justify-center text-white flex-shrink-0">
+                                            <span className="material-icons text-base">person</span>
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between mb-1">
-                                                <span className="text-xs font-semibold text-gray-900 dark:text-white">{comment.user?.name || comment.user || 'Anonymous'}</span>
+                                                <span className="text-xs font-semibold text-gray-400">Anonymous</span>
                                                 <span className="text-[10px] text-gray-400">{getTimeAgo(comment.created_at || comment.timestamp)}</span>
                                             </div>
                                             <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">{comment.content}</p>
@@ -339,8 +331,8 @@ export default function ReportDetail() {
             {/* Fixed Comment Input */}
             <div className="fixed bottom-0 left-0 right-0 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-lg border-t border-gray-200 dark:border-white/5 px-4 py-3 z-40">
                 <div className="flex items-center gap-3 max-w-lg mx-auto">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
-                        {(user?.name || 'AN').substring(0, 2).toUpperCase()}
+                    <div className="w-8 h-8 rounded-full bg-gray-600/40 flex items-center justify-center text-white flex-shrink-0">
+                        <span className="material-icons text-base">person</span>
                     </div>
                     <div className="flex-1 relative">
                         <input
