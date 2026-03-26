@@ -16,8 +16,7 @@ import {
     cancelSOS,
     endGuardianSession,
 } from '../services/guardianService';
-
-// ── Screen Wake Lock ──────────────────────────────────────────────────────────
+// ── Screen Wake Lock ────────────────────────────────────────────────────────────────────────────
 // Keeps the screen awake during an active session so GPS stays alive on iOS/Android.
 async function requestWakeLock() {
     if (!('wakeLock' in navigator)) return null;
@@ -28,26 +27,24 @@ async function requestWakeLock() {
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────────────
 function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-
 const CHECK_IN_OPTIONS = [
     { label: '15 min', value: 15 },
     { label: '30 min', value: 30 },
     { label: '1 hour', value: 60 },
 ];
-
 export default function GuardianMode() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const toast = useToast();
 
-    // ── State machine: setup | active | ended ────────────────────────────────
+    // ── State machine: setup | active | ended ────────────────────────────────────────────
     const [phase, setPhase] = useState('setup');
 
     // Setup form
@@ -62,13 +59,17 @@ export default function GuardianMode() {
     const [locationError, setLocationError] = useState('');
     const [timeLeftSecs, setTimeLeftSecs] = useState(0);
     const [isSOS, setIsSOS] = useState(false);
-    const [sosConfirm, setSosConfirm] = useState(false);
-    const [endConfirm, setEndConfirm] = useState(false); // replaces window.confirm()
+    const [holdProgress, setHoldProgress] = useState(0);     // 0-100, SOS hold button
+    const [autoSosCountdown, setAutoSosCountdown] = useState(null); // seconds until auto-SOS
+    const [isOffline, setIsOffline] = useState(!navigator.onLine);
+    const [endConfirm, setEndConfirm] = useState(false);
 
     // Refs — mutable values that don't need to trigger re-renders
-    const stopWatchRef    = useRef(null);  // GPS watcher cleanup function
+    const stopWatchRef    = useRef(null);  // GPS watcher cleanup
     const locationPushRef = useRef(null);  // interval ID for DB location push
     const checkInTimerRef = useRef(null);  // interval ID for check-in countdown
+    const autoSosRef      = useRef(null);  // interval ID for auto-SOS countdown
+    const holdTimerRef    = useRef(null);  // interval ID for hold-to-SOS progress
     const sessionRef      = useRef(null);  // stable ref to avoid stale closures
     const locationRef     = useRef(null);  // stable ref to latest GPS coords
     const wakeLockRef     = useRef(null);  // Screen Wake Lock sentinel
@@ -77,7 +78,22 @@ export default function GuardianMode() {
     useEffect(() => { sessionRef.current = session; }, [session]);
     useEffect(() => { locationRef.current = location; }, [location]);
 
-    // ── Start session ────────────────────────────────────────────────────────
+    // Derived — defined early so effects below can reference them
+    const overdue = timeLeftSecs === 0 && phase === 'active';
+    const pct = session ? Math.round((timeLeftSecs / (checkInMinutes * 60)) * 100) : 100;
+    // ── Network status ────────────────────────────────────────────────────────────────────────────
+    useEffect(() => {
+        const goOnline  = () => setIsOffline(false);
+        const goOffline = () => setIsOffline(true);
+        window.addEventListener('online',  goOnline);
+        window.addEventListener('offline', goOffline);
+        return () => {
+            window.removeEventListener('online',  goOnline);
+            window.removeEventListener('offline', goOffline);
+        };
+    }, []);
+
+    // ── Start session ────────────────────────────────────────────────────────────────────────────
     const handleStart = async () => {
         if (!user?.id) { toast.error('You must be logged in.'); return; }
         if (!daterName.trim()) { toast.error('Please enter your name.'); return; }
@@ -99,10 +115,7 @@ export default function GuardianMode() {
             setStarting(false);
         }
     };
-
-    // ── GPS watch — started when session becomes active ───────────────────────
-    // Single source of truth for the GPS watcher. locationRef is always current
-    // because of the useEffect above, so the push interval never reads stale coords.
+    // ── GPS watch — started when session becomes active ───────────────────────────────────────────
     useEffect(() => {
         if (phase !== 'active' || !isGeolocationSupported()) return;
         stopWatchRef.current = watchLocation(
@@ -115,8 +128,24 @@ export default function GuardianMode() {
         };
     }, [phase]);
 
-    // ── Location push — 10 s during SOS, 30 s otherwise ─────────────────────
-    // Uses locationRef to avoid stale-closure reads inside setInterval.
+    // ── Wake Lock re-acquisition on tab visibility ────────────────────────────────────────────
+    // The OS releases the wake lock when the tab is hidden. Re-acquire it when
+    // the user returns so GPS stays active for the rest of the session.
+    useEffect(() => {
+        if (phase !== 'active') return;
+        const handleVisibility = async () => {
+            if (
+                document.visibilityState === 'visible' &&
+                (!wakeLockRef.current || wakeLockRef.current.released)
+            ) {
+                wakeLockRef.current = await requestWakeLock();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }, [phase]);
+
+    // ── Location push — 10 s during SOS, 30 s otherwise ─────────────────────────────────────────
     useEffect(() => {
         if (phase !== 'active' || !session) return;
         const intervalMs = isSOS ? 10_000 : 30_000;
@@ -126,20 +155,20 @@ export default function GuardianMode() {
                     session.id,
                     locationRef.current.lat,
                     locationRef.current.lng,
-                ).catch(() => {}); // silent — GPS push is best-effort
+                ).catch(() => {});
             }
         }, intervalMs);
         locationPushRef.current = id;
         return () => clearInterval(id);
     }, [phase, session, isSOS]);
-
-    // ── Check-in countdown ───────────────────────────────────────────────────
+    // ── Check-in countdown ───────────────────────────────────────────────────────────────────────────
     const startCheckInTimer = useCallback((sessionId, totalSecs) => {
+        clearInterval(checkInTimerRef.current);
         setTimeLeftSecs(totalSecs);
         checkInTimerRef.current = setInterval(() => {
             setTimeLeftSecs(prev => {
                 if (prev <= 1) {
-                    // Check-in overdue — mark tense
+                    clearInterval(checkInTimerRef.current); // stop firing at 0
                     markTense(sessionId).catch(() => {});
                     return 0;
                 }
@@ -148,13 +177,53 @@ export default function GuardianMode() {
         }, 1000);
     }, []);
 
-    // ── "I'm Safe" ───────────────────────────────────────────────────────────
+    // ── Auto-SOS countdown — fires 60 s after check-in overdue ───────────────────────────────────────────
+    // When the check-in timer expires and the user hasn't responded, a 60-second
+    // countdown begins. If still no action, SOS is sent automatically.
+    // Cancelled by check-in, manual SOS, or session end.
+    useEffect(() => {
+        if (!overdue || isSOS) {
+            clearInterval(autoSosRef.current);
+            setAutoSosCountdown(null);
+            return;
+        }
+        setAutoSosCountdown(60);
+        autoSosRef.current = setInterval(() => {
+            setAutoSosCountdown(prev => {
+                if (prev === null) return null;
+                if (prev <= 1) {
+                    clearInterval(autoSosRef.current);
+                    const sess = sessionRef.current;
+                    const loc  = locationRef.current;
+                    if (sess) {
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
+                        triggerSOS(sess.id).catch(() => {
+                            const mapsLink = loc
+                                ? `https://maps.google.com/?q=${loc.lat},${loc.lng}`
+                                : 'Location unavailable';
+                            const body = encodeURIComponent(
+                                `🚨 EMERGENCY — I need help! RedFlag SOS
+📍 ${mapsLink}`
+                            );
+                            window.location.href = `sms:?body=${body}`;
+                        });
+                        setIsSOS(true);
+                    }
+                    return null;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(autoSosRef.current);
+    }, [overdue, isSOS]); // sessionRef, locationRef, setIsSOS are stable refs/setters
+    // ── "I'm Safe" ────────────────────────────────────────────────────────────────────────────
     const handleCheckIn = async () => {
         if (!session) return;
         try {
             await checkInSafe(session.id);
             setIsSOS(false);
-            // Reset countdown
+            clearInterval(autoSosRef.current);
+            setAutoSosCountdown(null);
             clearInterval(checkInTimerRef.current);
             startCheckInTimer(session.id, checkInMinutes * 60);
             toast.success("Check-in confirmed — guardian notified you're safe!");
@@ -163,10 +232,11 @@ export default function GuardianMode() {
         }
     };
 
-    // ── SOS ──────────────────────────────────────────────────────────────────
+    // ── SOS ──────────────────────────────────────────────────────────────────────────────────────
     const handleSOS = async () => {
         if (!session) return;
-        setSosConfirm(false);
+        clearInterval(autoSosRef.current);
+        setAutoSosCountdown(null);
         if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
 
         try {
@@ -174,14 +244,13 @@ export default function GuardianMode() {
             setIsSOS(true);
             toast.error('🚨 SOS sent to your guardian!');
         } catch {
-            // Network unavailable — fall back to native SMS so the alert still
-            // reaches a contact even without internet.
-            setIsSOS(true); // show local SOS state regardless
+            setIsSOS(true);
             const mapsLink = locationRef.current
                 ? `https://maps.google.com/?q=${locationRef.current.lat},${locationRef.current.lng}`
                 : 'Location unavailable';
             const body = encodeURIComponent(
-                `🚨 EMERGENCY — I need help! RedFlag SOS\n📍 ${mapsLink}`
+                `🚨 EMERGENCY — I need help! RedFlag SOS
+📍 ${mapsLink}`
             );
             window.location.href = `sms:?body=${body}`;
             toast.error('🚨 Network unavailable — SMS app opened as fallback.');
@@ -193,6 +262,8 @@ export default function GuardianMode() {
         try {
             await cancelSOS(session.id);
             setIsSOS(false);
+            clearInterval(autoSosRef.current);
+            setAutoSosCountdown(null);
             if (navigator.vibrate) navigator.vibrate(0);
             toast.success("SOS cancelled — guardian notified you're safe.");
             clearInterval(checkInTimerRef.current);
@@ -201,14 +272,36 @@ export default function GuardianMode() {
             toast.error('Cancel failed.');
         }
     };
+    // ── Hold-to-SOS ────────────────────────────────────────────────────────────────────────────────────
+    // The user must hold the SOS button for 2 seconds to fire, preventing
+    // accidental triggers. A fill animation tracks hold progress (5% per 100 ms).
+    const handleSOSHoldStart = () => {
+        if (isSOS) return;
+        let progress = 0;
+        holdTimerRef.current = setInterval(() => {
+            progress += 5; // 100 ms x 20 steps = 2 s
+            setHoldProgress(progress);
+            if (progress >= 100) {
+                clearInterval(holdTimerRef.current);
+                setHoldProgress(0);
+                handleSOS();
+            }
+        }, 100);
+    };
 
-    // ── Share guardian link ──────────────────────────────────────────────────
+    const handleSOSHoldEnd = () => {
+        clearInterval(holdTimerRef.current);
+        setHoldProgress(0);
+    };
+
+    // ── Share guardian link ────────────────────────────────────────────────────────────────────────────
     const guardianUrl = session
         ? `${window.location.origin}/guardian/${session.session_token}`
         : '';
 
     const handleShare = async () => {
-        const text = `🛡️ ${daterName} has activated Guardian Mode on RedFlag.\nWatch their safety live: ${guardianUrl}`;
+        const text = `🛡️ ${daterName} has activated Guardian Mode on RedFlag.
+Watch their safety live: ${guardianUrl}`;
         if (navigator.share) {
             await navigator.share({ title: 'Watch my date safety', text, url: guardianUrl });
         } else {
@@ -219,19 +312,21 @@ export default function GuardianMode() {
 
     const handleShareWhatsApp = () => {
         const msg = encodeURIComponent(
-            `🛡️ ${daterName} has activated Guardian Mode on RedFlag.\nI'm going on a date — please watch my safety live:\n${guardianUrl}`
+            `🛡️ ${daterName} has activated Guardian Mode on RedFlag.
+I'm going on a date — please watch my safety live:
+${guardianUrl}`
         );
         window.open(`https://wa.me/?text=${msg}`, '_blank');
     };
-
-    // ── End session ──────────────────────────────────────────────────────────
-    // Uses endConfirm state instead of window.confirm() — confirm() is blocked in
-    // iOS PWA standalone mode and can silently swallow the action.
+    // ── End session ────────────────────────────────────────────────────────────────────────────
     const handleEndRequest = () => setEndConfirm(true);
 
     const handleEndConfirmed = useCallback(async () => {
         setEndConfirm(false);
         if (!session) return;
+        clearInterval(autoSosRef.current);
+        clearInterval(holdTimerRef.current);
+        setHoldProgress(0);
         try { await endGuardianSession(session.id); } catch { /* best-effort */ }
         setPhase('ended');
         clearInterval(checkInTimerRef.current);
@@ -241,21 +336,18 @@ export default function GuardianMode() {
         if (navigator.vibrate) navigator.vibrate(0);
     }, [session]);
 
-    // ── Cleanup on unmount ───────────────────────────────────────────────────
+    // ── Cleanup on unmount ───────────────────────────────────────────────────────────────────────────
     useEffect(() => {
         return () => {
             clearInterval(checkInTimerRef.current);
             clearInterval(locationPushRef.current);
+            clearInterval(autoSosRef.current);
+            clearInterval(holdTimerRef.current);
             stopWatchRef.current?.();
             wakeLockRef.current?.release().catch(() => {});
         };
     }, []);
-
-    // ── Derived ──────────────────────────────────────────────────────────────
-    const overdue = timeLeftSecs === 0 && phase === 'active';
-    const pct = session ? Math.round((timeLeftSecs / (checkInMinutes * 60)) * 100) : 100;
-
-    // ── Render: SETUP ────────────────────────────────────────────────────────
+    // ── Render: SETUP ────────────────────────────────────────────────────────────────────────────
     if (phase === 'setup') {
         return (
             <div className="bg-background-light dark:bg-background-dark min-h-screen font-display text-gray-900 dark:text-gray-100">
@@ -275,7 +367,6 @@ export default function GuardianMode() {
                 </header>
 
                 <main className="px-4 py-6 space-y-5 max-w-md mx-auto pb-24">
-                    {/* How it works */}
                     <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
                         <p className="text-sm font-bold text-primary flex items-center gap-2">
                             <span className="material-icons text-base">info</span>
@@ -284,7 +375,7 @@ export default function GuardianMode() {
                         {[
                             ['my_location', 'Your GPS is shared with your guardian every 30 seconds'],
                             ['notifications_active', 'If you stop checking in, your guardian gets a warning'],
-                            ['sos', 'One tap SOS immediately alerts them with your exact location'],
+                            ['sos', 'Hold the SOS button 2 seconds to immediately alert them'],
                         ].map(([icon, text]) => (
                             <div key={icon} className="flex items-start gap-2.5">
                                 <span className="material-icons text-primary text-sm mt-0.5">{icon}</span>
@@ -292,8 +383,6 @@ export default function GuardianMode() {
                             </div>
                         ))}
                     </div>
-
-                    {/* Form */}
                     <div className="bg-white dark:bg-[#1a202c] rounded-2xl border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
                         <div className="p-4">
                             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Your Name</label>
@@ -303,17 +392,15 @@ export default function GuardianMode() {
                                 placeholder="How your guardian will see you"
                                 className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
                             />
-                        </div>
-                        <div className="p-4">
+                        </div>                        <div className="p-4">
                             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Date Venue <span className="text-gray-400 font-normal normal-case">(optional)</span></label>
                             <input
                                 value={dateLocation}
                                 onChange={e => setDateLocation(e.target.value)}
-                                placeholder="e.g. Café Luna, 5th Ave"
+                                placeholder="e.g. Cafe Luna, 5th Ave"
                                 className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
                             />
-                        </div>
-                        <div className="p-4">
+                        </div>                        <div className="p-4">
                             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-3">Check-in interval</label>
                             <div className="flex gap-2">
                                 {CHECK_IN_OPTIONS.map(opt => (
@@ -348,7 +435,6 @@ export default function GuardianMode() {
         );
     }
 
-    // ── Render: ENDED ────────────────────────────────────────────────────────
     if (phase === 'ended') {
         return (
             <div className="bg-background-light dark:bg-background-dark min-h-screen font-display flex flex-col items-center justify-center p-8 text-center gap-6">
@@ -369,12 +455,11 @@ export default function GuardianMode() {
         );
     }
 
-    // ── Render: ACTIVE ───────────────────────────────────────────────────────
+    // ── Render: ACTIVE ───────────────────────────────────────────────────────────────────────────
     const sentimentLabel = isSOS ? '🔴 SOS Active' : overdue ? '🟡 Check-in overdue' : '🟢 Safe';
 
     return (
         <div className="bg-background-light dark:bg-background-dark min-h-screen font-display text-gray-900 dark:text-gray-100">
-            {/* Header */}
             <header className={`sticky top-0 z-30 backdrop-blur-lg border-b border-gray-200 dark:border-white/5 ${isSOS ? 'bg-red-500' : 'bg-background-light/90 dark:bg-background-dark/90'}`}>
                 <div className="flex items-center gap-3 px-4 py-4">
                     <button onClick={() => navigate(-1)} className={`p-1.5 rounded-full transition-colors ${isSOS ? 'hover:bg-white/20 text-white' : 'hover:bg-gray-200 dark:hover:bg-white/10'}`}>
@@ -397,7 +482,15 @@ export default function GuardianMode() {
 
             <main className="px-4 py-5 space-y-4 max-w-md mx-auto pb-32">
 
-                {/* SOS Banner */}
+                {isOffline && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 flex items-center gap-2">
+                        <span className="material-icons text-amber-500 text-lg">wifi_off</span>
+                        <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                            No internet — SOS will open SMS as fallback
+                        </p>
+                    </div>
+                )}
+
                 {isSOS && (
                     <div className="bg-red-500 rounded-2xl p-5 text-white text-center space-y-3 animate-pulse">
                         <span className="material-icons text-5xl">sos</span>
@@ -412,7 +505,6 @@ export default function GuardianMode() {
                     </div>
                 )}
 
-                {/* Guardian Link Card */}
                 <div className="bg-white dark:bg-[#1a202c] rounded-2xl border border-gray-100 dark:border-gray-800 p-4 space-y-3">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Guardian Link</p>
                     <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 flex items-center gap-2">
@@ -437,7 +529,6 @@ export default function GuardianMode() {
                     </div>
                 </div>
 
-                {/* Check-in Timer */}
                 <div className={`rounded-2xl border p-4 ${overdue ? 'bg-yellow-50 dark:bg-yellow-500/10 border-yellow-300 dark:border-yellow-500/30' : 'bg-white dark:bg-[#1a202c] border-gray-100 dark:border-gray-800'}`}>
                     <div className="flex items-center justify-between mb-3">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Next Check-in</p>
@@ -445,13 +536,20 @@ export default function GuardianMode() {
                             {overdue ? 'OVERDUE' : formatTime(timeLeftSecs)}
                         </span>
                     </div>
-                    {/* Progress bar */}
                     <div className="h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden mb-3">
                         <div
                             className={`h-full rounded-full transition-all duration-1000 ${overdue ? 'bg-yellow-400 w-full' : pct > 50 ? 'bg-green-400' : pct > 20 ? 'bg-yellow-400' : 'bg-red-400'}`}
                             style={{ width: overdue ? '100%' : `${pct}%` }}
                         />
                     </div>
+                    {overdue && autoSosCountdown !== null && (
+                        <div className="flex items-center gap-2 mb-3 p-2.5 bg-red-500/10 rounded-xl border border-red-500/20">
+                            <span className="material-icons text-red-500 text-base animate-pulse">warning</span>
+                            <p className="text-xs font-bold text-red-600 dark:text-red-400">
+                                Auto-SOS in {autoSosCountdown}s — tap &quot;I'm Safe&quot; to cancel
+                            </p>
+                        </div>
+                    )}
                     <button
                         onClick={handleCheckIn}
                         className="w-full py-3.5 rounded-xl bg-green-500 text-white font-bold text-base shadow-lg shadow-green-500/25 hover:bg-green-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
@@ -461,14 +559,20 @@ export default function GuardianMode() {
                     </button>
                 </div>
 
-                {/* Location */}
                 <div className="bg-white dark:bg-[#1a202c] rounded-2xl border border-gray-100 dark:border-gray-800 p-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Your Location</p>
                     {location ? (
                         <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                                <span className="text-sm text-gray-600 dark:text-gray-300">GPS active — updating every 30s</span>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                                    <span className="text-sm text-gray-600 dark:text-gray-300">GPS active</span>
+                                </div>
+                                {location.accuracy && (
+                                    <span className="text-xs text-gray-400 font-mono">
+                                        ±{Math.round(location.accuracy)}m
+                                    </span>
+                                )}
                             </div>
                             {session?.date_location && (
                                 <p className="text-sm font-medium">📍 {session.date_location}</p>
@@ -490,34 +594,28 @@ export default function GuardianMode() {
                     )}
                 </div>
 
-                {/* SOS Button */}
-                {!isSOS && !sosConfirm && (
+                {!isSOS && (
                     <button
-                        onPointerDown={() => setSosConfirm(true)}
-                        className="w-full py-5 rounded-2xl bg-red-500 text-white font-black text-xl shadow-2xl shadow-red-500/30 hover:bg-red-600 active:scale-[0.97] transition-all flex items-center justify-center gap-3"
+                        onPointerDown={handleSOSHoldStart}
+                        onPointerUp={handleSOSHoldEnd}
+                        onPointerLeave={handleSOSHoldEnd}
+                        className="w-full py-5 rounded-2xl bg-red-500 text-white font-black text-xl shadow-2xl shadow-red-500/30 overflow-hidden relative select-none"
+                        style={{ touchAction: 'none' }}
                     >
-                        <span className="material-icons text-3xl">sos</span>
-                        SEND SOS
+                        <div
+                            className="absolute inset-0 bg-red-700 origin-left"
+                            style={{ transform: `scaleX(${holdProgress / 100})`, transition: holdProgress === 0 ? 'none' : 'transform 100ms linear' }}
+                        />
+                        <span className="relative flex items-center justify-center gap-3 pointer-events-none">
+                            <span className="material-icons text-3xl">sos</span>
+                            {holdProgress > 0
+                                ? `Hold... ${Math.round(holdProgress)}%`
+                                : 'HOLD TO SEND SOS'
+                            }
+                        </span>
                     </button>
                 )}
 
-                {/* SOS confirm */}
-                {sosConfirm && !isSOS && (
-                    <div className="bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-5 space-y-3 text-center">
-                        <p className="font-bold text-red-600 dark:text-red-400 text-base">Confirm emergency?</p>
-                        <p className="text-sm text-gray-500">This will immediately alert your guardian with your GPS location.</p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setSosConfirm(false)} className="flex-1 py-3 rounded-xl border border-gray-300 dark:border-gray-700 text-sm font-semibold">
-                                Cancel
-                            </button>
-                            <button onClick={handleSOS} className="flex-1 py-3 rounded-xl bg-red-500 text-white text-sm font-bold">
-                                YES, SEND SOS
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* End Session */}
                 {endConfirm ? (
                     <div className="bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 space-y-3 text-center">
                         <p className="font-semibold text-gray-800 dark:text-white text-sm">End guardian session?</p>
