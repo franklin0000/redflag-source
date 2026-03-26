@@ -20,6 +20,7 @@ export async function loadModels() {
     if (modelsLoaded) return;
     await Promise.all([
         faceapi.nets.ssdMobilenetv1.loadFromUri(MODELS_URL),
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODELS_URL),
         faceapi.nets.faceLandmark68Net.loadFromUri(MODELS_URL),
         faceapi.nets.faceRecognitionNet.loadFromUri(MODELS_URL),
     ]);
@@ -57,10 +58,20 @@ export async function detectFace(source) {
     await loadModels();
     const img = await createImageElement(source);
 
-    const detection = await faceapi
-        .detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+    // Primary detector: SSD MobileNet with relaxed confidence threshold
+    let detection = await faceapi
+        .detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
         .withFaceLandmarks()
         .withFaceDescriptor();
+
+    // Fallback: TinyFaceDetector — more permissive for low-quality / angled photos
+    if (!detection) {
+        const tiny = await faceapi
+            .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.3 }))
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+        detection = tiny || null;
+    }
 
     if (!detection) {
         return { detected: false, descriptor: null, box: null };
@@ -68,8 +79,8 @@ export async function detectFace(source) {
 
     return {
         detected: true,
-        descriptor: detection.descriptor,   // Float32Array(128) — unique face fingerprint
-        box: detection.detection.box,       // { x, y, width, height }
+        descriptor: detection.descriptor,
+        box: detection.detection.box,
     };
 }
 

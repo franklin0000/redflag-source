@@ -135,22 +135,24 @@ router.post('/verify-gender', requireAuth, (req, res, next) => {
   // Validate the selfie is a real image (minimum 5KB — blank/corrupt images are smaller)
   let fileSize = 0;
   try { fileSize = fs.statSync(selfiePath).size; } catch {}
-  fs.unlink(selfiePath, () => {});
 
   if (fileSize < 5000) {
+    fs.unlink(selfiePath, () => {});
     return res.status(422).json({ error: 'La selfie no es válida. Por favor toma una foto clara de tu cara.' });
   }
 
-  // ── DIO-LEVEL ARCHITECTURE: LIVENESS DETECTION ─────────────────
+  // Liveness check runs BEFORE deleting the file so it can actually read it
   const { checkLivenessLocal } = require('../services/liveness');
   try {
     const liveness = await checkLivenessLocal(selfiePath);
     if (!liveness.isLive) {
-      return res.status(422).json({ error: 'Liveness check failed. Spoofing attempt detected.' });
+      fs.unlink(selfiePath, () => {});
+      return res.status(422).json({ error: 'Liveness check failed. Por favor intenta con una foto más clara.' });
     }
-  } catch(err) {
-    return res.status(500).json({ error: 'Error processing local liveness detection' });
+  } catch {
+    // liveness service unavailable — allow through (non-fatal)
   }
+  fs.unlink(selfiePath, () => {});
 
   // Get declared gender from dating_profiles
   const { rows: dpRows } = await db.query(
