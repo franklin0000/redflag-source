@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -72,6 +72,9 @@ export default function CommunityRoom() {
 
     const [myReactions, setMyReactions] = useState({});
     const [genderModalOpen, setGenderModalOpen] = useState(false);
+    const [flaggedPosts, setFlaggedPosts] = useState(new Set()); // IDs of posts flagged by this user
+    const [flagModal, setFlagModal] = useState(null); // postId being flagged, or null
+    const [deleteModal, setDeleteModal] = useState(null); // postId pending delete confirmation
     const [verifyModalOpen, setVerifyModalOpen] = useState(false);
     const [verifying, setVerifying] = useState(false);
     const [verifyError, setVerifyError] = useState(null);
@@ -96,7 +99,9 @@ export default function CommunityRoom() {
 
             return {
                 id: p.id,
-                // Gender rooms: always anonymous — never expose real identity
+                // ownerId is always stored for ownership checks (delete button) but never shown in anonymous rooms
+                ownerId: p.user_id,
+                // Gender rooms: display identity as Anonymous — never expose real identity in UI
                 userId: isGenderRoom ? null : p.user_id,
                 username: isGenderRoom ? 'Anonymous' : (p.user?.name || p.name || 'Anonymous'),
                 userAvatar: isGenderRoom ? null : (p.user?.photo_url || p.avatar_url || null),
@@ -252,8 +257,7 @@ export default function CommunityRoom() {
 
             // ✅ Gender matches and verified — access granted
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, roomId, room, navigate]);
+    }, [user, roomId, room, navigate, toast]);
 
 
     const handleReact = async (postId, emoji) => {
@@ -363,9 +367,7 @@ export default function CommunityRoom() {
                 }
             }
 
-            console.log(`Creating post in room: ${roomId}`, { content: optimisticPost.content, mediaUrl, fileType });
             const data = await postsApi.createPost(optimisticPost.content, mediaUrl, roomId, fileType, fileName);
-            console.log("Post creation response:", data);
 
             // 2. Replace Optimistic Post with Real Post
             const realPost = mapPosts([{ ...data, room_id: roomId, media_type: fileType, media_name: fileName }])[0];
@@ -374,7 +376,7 @@ export default function CommunityRoom() {
 
         } catch (error) {
             console.error("Error creating post:", error);
-            toast.error(`Failed to create post: ${error.message}`);
+            toast.error('Failed to post. Please try again.');
             // Revert optimistic update on error
             setPosts(prev => prev.filter(p => p.id !== tempId));
         } finally {
@@ -462,24 +464,36 @@ export default function CommunityRoom() {
         }
     };
 
-    const handleGenderUpdate = async (gender) => {
-        // Assuming updateProfile is available via context or prop, but it's not imported here
-        // We need to use supabase directly or import useAuth's updateProfile
-        // useAuth only exposes 'user' in the destructuring at the top.
-        // Let's grab updateProfile from useAuth
-        // Wait, I can't change the hook call at the top without breaking rules of hooks if I did conditional..
-        // But I can just add it to the destructuring.
-        // However, if I can't edit the top of file easily...
-        // Actually I am rewriting the whole file, so I strictly need to add updateProfile to useAuth
+    const handleFlagPost = async (postId, reason) => {
+        setFlagModal(null);
+        try {
+            await postsApi.flagPost(postId, reason);
+            setFlaggedPosts(prev => new Set([...prev, postId]));
+            toast.success('Post reported to moderators. Thank you.');
+        } catch {
+            toast.error('Failed to report post.');
+        }
+    };
 
-        // For now, I will use supabase to update directly if updateProfile isn't available
+    const handleGenderUpdate = async (gender) => {
         try {
             await usersApi.updateMe({ gender });
             setGenderModalOpen(false);
-            toast.success("Profile updated!");
+            toast.success('Profile updated!');
             window.location.reload();
         } catch (e) {
             console.error(e);
+        }
+    };
+
+    const handleDeletePost = async (postId) => {
+        setDeleteModal(null);
+        try {
+            await postsApi.deletePost(postId);
+            setPosts(prev => prev.filter(p => p.id !== postId));
+            toast.success('Post deleted.');
+        } catch {
+            toast.error('Failed to delete post.');
         }
     };
 
@@ -614,6 +628,24 @@ export default function CommunityRoom() {
                                 {post.replies?.length > 0 ? `${post.replies.length} replies` : 'Reply'}
                             </button>
                             <span className="text-[10px] text-gray-400">{totalReactions(post.reactions)} reactions</span>
+                            <div className="ml-auto flex items-center gap-2">
+                                {post.ownerId === user?.id && (
+                                    <button
+                                        onClick={() => setDeleteModal(post.id)}
+                                        className="flex items-center gap-1 text-xs text-gray-300 hover:text-red-400 transition-colors"
+                                        title="Delete post"
+                                    >
+                                        <span className="material-icons text-sm">delete_outline</span>
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => !flaggedPosts.has(post.id) && setFlagModal(post.id)}
+                                    className={`flex items-center gap-1 text-xs transition-colors ${flaggedPosts.has(post.id) ? 'text-red-400 cursor-default' : 'text-gray-300 hover:text-red-400'}`}
+                                    title="Report post"
+                                >
+                                    <span className="material-icons text-sm">{flaggedPosts.has(post.id) ? 'flag' : 'outlined_flag'}</span>
+                                </button>
+                            </div>
                         </div>
 
                         {/* Replies Thread */}
@@ -644,15 +676,23 @@ export default function CommunityRoom() {
 
                                 {/* Reply Input */}
                                 <div className="px-4 py-2.5 flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={replyingTo === post.id ? newText : ''}
-                                        onFocus={() => setReplyingTo(post.id)}
-                                        onChange={(e) => { setReplyingTo(post.id); setNewText(e.target.value); }}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleReply(post.id)}
-                                        placeholder="Write a reply..."
-                                        className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-full px-3 py-2 text-xs outline-none focus:border-primary transition-colors"
-                                    />
+                                    <div className="flex-1 relative">
+                                        <input
+                                            type="text"
+                                            value={replyingTo === post.id ? newText : ''}
+                                            onFocus={() => setReplyingTo(post.id)}
+                                            onChange={(e) => { setReplyingTo(post.id); setNewText(e.target.value.slice(0, 280)); }}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleReply(post.id)}
+                                            placeholder="Write a reply..."
+                                            maxLength={280}
+                                            className="w-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-full px-3 py-2 text-xs outline-none focus:border-primary transition-colors"
+                                        />
+                                        {replyingTo === post.id && newText.length > 240 && (
+                                            <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-medium ${newText.length >= 280 ? 'text-red-400' : 'text-gray-400'}`}>
+                                                {280 - newText.length}
+                                            </span>
+                                        )}
+                                    </div>
                                     <button
                                         onClick={() => handleReply(post.id)}
                                         className={`w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center transition-all ${replyingTo === post.id && newText.trim() ? 'opacity-100 scale-100' : 'opacity-30 scale-90'}`}
@@ -680,11 +720,14 @@ export default function CommunityRoom() {
                         <textarea
                             autoFocus
                             value={newPostContent}
-                            onChange={(e) => setNewPostContent(e.target.value)}
+                            onChange={(e) => setNewPostContent(e.target.value.slice(0, 500))}
                             placeholder={`Share something with ${room.name}...`}
                             rows={4}
                             className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-3 text-sm outline-none focus:border-primary resize-none transition-colors"
                         />
+                        <p className={`text-[10px] text-right mt-1 ${newPostContent.length >= 480 ? 'text-red-400' : 'text-gray-400'}`}>
+                            {newPostContent.length}/500
+                        </p>
 
                         {/* File Preview */}
                         {filePreview && (
@@ -972,6 +1015,71 @@ export default function CommunityRoom() {
                                 className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors py-2 px-4"
                             >
                                 Skip for now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Flag confirmation modal */}
+            {flagModal && (
+                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="w-full max-w-lg bg-background-light dark:bg-[#1a1525] rounded-t-3xl p-5 pb-8 border-t border-gray-200 dark:border-white/10 shadow-2xl">
+                        <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600 mx-auto mb-4" />
+                        <h3 className="text-base font-bold mb-1 flex items-center gap-2">
+                            <span className="material-icons text-red-400">flag</span>
+                            Report post
+                        </h3>
+                        <p className="text-xs text-gray-500 mb-4">Why are you reporting this post?</p>
+                        <div className="space-y-2">
+                            {[
+                                ['inappropriate', 'Inappropriate content'],
+                                ['spam', 'Spam or advertising'],
+                                ['harassment', 'Harassment or bullying'],
+                                ['misinformation', 'Misinformation'],
+                                ['hate_speech', 'Hate speech'],
+                            ].map(([value, label]) => (
+                                <button
+                                    key={value}
+                                    onClick={() => handleFlagPost(flagModal, value)}
+                                    className="w-full text-left px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 text-sm font-medium transition-colors border border-gray-100 dark:border-white/5"
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setFlagModal(null)}
+                            className="w-full mt-3 py-2.5 rounded-xl text-sm text-gray-400 border border-gray-200 dark:border-gray-700"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete confirmation modal */}
+            {deleteModal && (
+                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="w-full max-w-lg bg-background-light dark:bg-[#1a1525] rounded-t-3xl p-5 pb-8 border-t border-gray-200 dark:border-white/10 shadow-2xl">
+                        <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600 mx-auto mb-4" />
+                        <h3 className="text-base font-bold mb-1 flex items-center gap-2">
+                            <span className="material-icons text-red-400">delete_outline</span>
+                            Delete post?
+                        </h3>
+                        <p className="text-xs text-gray-500 mb-5">This action cannot be undone.</p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteModal(null)}
+                                className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-500"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleDeletePost(deleteModal)}
+                                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 transition-all"
+                            >
+                                Delete
                             </button>
                         </div>
                     </div>

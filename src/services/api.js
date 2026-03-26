@@ -153,6 +153,8 @@ export const postsApi = {
   getComments: (id) => request(`/api/posts/${id}/comments`),
   postComment: (id, content) =>
     request(`/api/posts/${id}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
+  flagPost: (id, reason = 'inappropriate') =>
+    request(`/api/posts/${id}/flag`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 // ── REPORTS ───────────────────────────────────────────────────

@@ -264,4 +264,23 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/posts/:id/flag — report post to moderators
+// One flag per user per post (UNIQUE constraint). Silent on duplicate.
+router.post('/:id/flag', requireAuth, async (req, res) => {
+  const VALID_REASONS = ['inappropriate', 'spam', 'harassment', 'misinformation', 'hate_speech'];
+  const reason = req.body.reason || 'inappropriate';
+  if (!VALID_REASONS.includes(reason)) {
+    return res.status(400).json({ error: 'Invalid reason' });
+  }
+  try {
+    await db.query(
+      'INSERT INTO post_flags (post_id, user_id, reason) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [req.params.id, req.user.id, reason]
+    );
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;
