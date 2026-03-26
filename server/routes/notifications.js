@@ -56,7 +56,7 @@ router.get('/unread-count', requireAuth, async (req, res) => {
 });
 
 // GET /api/notifications/vapid-key - returns VAPID public key for client
-router.get('/vapid-key', (req, res) => {
+router.get('/vapid-key', (_req, res) => {
   res.json({ key: VAPID_PUBLIC_KEY });
 });
 
@@ -91,40 +91,36 @@ router.post('/unsubscribe', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/notifications/send - send push to user (internal use)
+// POST /api/notifications/send - send push notification to yourself only
 router.post('/send', requireAuth, async (req, res) => {
-  const { userId, title, body, data } = req.body;
-  
+  const userId = req.user.id; // always use the authenticated user's own id
+  const { title, body, data } = req.body;
+
   try {
-    const subscription = pushSubscriptions.get(userId);
-    if (!subscription) {
-      // Try DB
+    let sub = pushSubscriptions.get(userId);
+    if (!sub) {
       const { rows } = await db.query(
         'SELECT subscription FROM push_subscriptions WHERE user_id = $1',
         [userId]
       );
-      if (rows.length === 0) {
-        return res.json({ sent: false, reason: 'no subscription' });
-      }
+      if (rows.length === 0) return res.json({ sent: false, reason: 'no subscription' });
+      sub = JSON.parse(rows[0].subscription);
     }
-    
-    const sub = subscription || JSON.parse(rows[0].subscription);
-    
+
     await webpush.sendNotification(sub, JSON.stringify({
       title,
       body,
       data,
       icon: '/icons/icon-192.png',
     }));
-    
+
     res.json({ sent: true });
   } catch (err) {
     if (err.statusCode === 410) {
-      // Subscription expired, remove it
       pushSubscriptions.delete(userId);
       await db.query('DELETE FROM push_subscriptions WHERE user_id = $1', [userId]);
     }
-    res.json({ sent: false, error: err.message });
+    res.json({ sent: false });
   }
 });
 

@@ -5,11 +5,9 @@ const db = require('../db');
 const { signToken, signRefreshToken, JWT_SECRET } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
 
-let rateLimit;
-try { rateLimit = require('express-rate-limit'); } catch { rateLimit = null; }
-const makeLimit = (max, windowMin = 15) => rateLimit
-  ? rateLimit({ windowMs: windowMin * 60 * 1000, max, standardHeaders: true, legacyHeaders: false })
-  : (req, res, next) => next();
+const rateLimit = require('express-rate-limit');
+const makeLimit = (max, windowMin = 15) =>
+  rateLimit({ windowMs: windowMin * 60 * 1000, max, standardHeaders: true, legacyHeaders: false });
 const loginLimiter = makeLimit(10, 15);     // 10 attempts per 15 min
 const registerLimiter = makeLimit(5, 60);   // 5 registrations per hour
 const resetLimiter = makeLimit(3, 60);      // 3 reset requests per hour

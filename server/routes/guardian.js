@@ -1,6 +1,16 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
+
+const sosLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,  // 5 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many SOS requests, please try again later' },
+});
 
 let _io = null;
 router.setIo = (io) => { _io = io; };
@@ -8,7 +18,7 @@ router.setIo = (io) => { _io = io; };
 // POST /api/guardian/sessions — create session
 router.post('/sessions', requireAuth, async (req, res) => {
   const { dater_name, date_location, check_in_minutes = 30 } = req.body;
-  const token = require('crypto').randomBytes(18).toString('hex');
+  const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hours
   try {
     const { rows } = await db.query(
@@ -80,8 +90,11 @@ function getDistanceMeters(lat1, lon1, lat2, lon2) {
 
 // PATCH /api/guardian/sessions/:id/location — update GPS with Geofencing
 router.patch('/sessions/:id/location', requireAuth, async (req, res) => {
-  const { lat, lng } = req.body;
-  if (lat == null || lng == null) return res.status(400).json({ error: 'lat and lng required' });
+  const lat = parseFloat(req.body.lat);
+  const lng = parseFloat(req.body.lng);
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: 'Valid lat (-90 to 90) and lng (-180 to 180) are required' });
+  }
   
   try {
     // 1. Fetch current session state for geofence analysis
@@ -154,7 +167,7 @@ router.post('/sessions/:id/checkin', requireAuth, async (req, res) => {
 });
 
 // POST /api/guardian/sessions/:id/sos — trigger SOS
-router.post('/sessions/:id/sos', requireAuth, async (req, res) => {
+router.post('/sessions/:id/sos', sosLimiter, requireAuth, async (req, res) => {
   const { location } = req.body;
   try {
     const { rows } = await db.query(
