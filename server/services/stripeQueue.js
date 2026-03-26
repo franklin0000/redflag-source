@@ -22,6 +22,13 @@ const worker = new Worker('stripe-webhooks', async job => {
   const { event } = job.data;
   console.log(`[Stripe Worker] Processing event: ${event.type}`);
 
+  const idempotencyKey = `stripe_event_${event.id}`;
+  const alreadyProcessed = await connection.get(idempotencyKey);
+  if (alreadyProcessed) {
+    console.log(`[Stripe Worker] Event ${event.id} already processed. Skipping.`);
+    return;
+  }
+
   try {
     if (event.type === 'payment_intent.succeeded') {
       const pi = event.data.object;
@@ -36,6 +43,9 @@ const worker = new Worker('stripe-webhooks', async job => {
         console.log(`✅ [Stripe Worker] subscription ${sub.status} for user ${sub.metadata.userId}`);
       }
     }
+
+    // Mark event as processed (TTL 24h)
+    await connection.setex(idempotencyKey, 86400, 'PROCESSED');
   } catch (err) {
     console.error(`[Stripe Worker] Error processing ${event.id}:`, err);
     throw err; // Trigger standard exponential backoff retry in BullMQ

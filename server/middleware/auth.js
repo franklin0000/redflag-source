@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
-if (process.env.NODE_ENV === 'production' && \!process.env.JWT_SECRET) {
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET environment variable is required in production');
 }
 const JWT_SECRET = process.env.JWT_SECRET || 'redflag-dev-secret-change-in-prod';

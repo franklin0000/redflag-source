@@ -17,6 +17,17 @@ import {
     endGuardianSession,
 } from '../services/guardianService';
 
+// ── Screen Wake Lock ──────────────────────────────────────────────────────────
+// Keeps the screen awake during an active session so GPS stays alive on iOS/Android.
+async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return null;
+    try {
+        return await navigator.wakeLock.request('screen');
+    } catch {
+        return null; // Denied (e.g. low battery mode) — degrade gracefully
+    }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
@@ -52,14 +63,19 @@ export default function GuardianMode() {
     const [timeLeftSecs, setTimeLeftSecs] = useState(0);
     const [isSOS, setIsSOS] = useState(false);
     const [sosConfirm, setSosConfirm] = useState(false);
+    const [endConfirm, setEndConfirm] = useState(false); // replaces window.confirm()
 
-    // Refs
-    const stopWatchRef = useRef(null);
-    const locationPushRef = useRef(null);  // interval pushing location to DB
-    const checkInTimerRef = useRef(null);  // countdown interval
-    const sessionRef = useRef(null);       // stable ref to session
+    // Refs — mutable values that don't need to trigger re-renders
+    const stopWatchRef    = useRef(null);  // GPS watcher cleanup function
+    const locationPushRef = useRef(null);  // interval ID for DB location push
+    const checkInTimerRef = useRef(null);  // interval ID for check-in countdown
+    const sessionRef      = useRef(null);  // stable ref to avoid stale closures
+    const locationRef     = useRef(null);  // stable ref to latest GPS coords
+    const wakeLockRef     = useRef(null);  // Screen Wake Lock sentinel
 
+    // Keep refs in sync with state
     useEffect(() => { sessionRef.current = session; }, [session]);
+    useEffect(() => { locationRef.current = location; }, [location]);
 
     // ── Start session ────────────────────────────────────────────────────────
     const handleStart = async () => {
@@ -73,8 +89,9 @@ export default function GuardianMode() {
             setSession(sess);
             setTimeLeftSecs(checkInMinutes * 60);
             setPhase('active');
-            startLocationWatch(sess.id);
             startCheckInTimer(sess.id, checkInMinutes * 60);
+            // Prevent screen sleep so GPS stays alive (iOS/Android PWA)
+            requestWakeLock().then(lock => { wakeLockRef.current = lock; });
             toast.success('Guardian session started!');
         } catch (e) {
             toast.error('Failed to start session: ' + e.message);
@@ -83,40 +100,38 @@ export default function GuardianMode() {
         }
     };
 
-    // ── GPS watch + push to Supabase every 30 s ──────────────────────────────
-    const startLocationWatch = useCallback((sessionId) => {
-        if (!isGeolocationSupported()) return;
+    // ── GPS watch — started when session becomes active ───────────────────────
+    // Single source of truth for the GPS watcher. locationRef is always current
+    // because of the useEffect above, so the push interval never reads stale coords.
+    useEffect(() => {
+        if (phase !== 'active' || !isGeolocationSupported()) return;
         stopWatchRef.current = watchLocation(
-            (coords) => {
-                setLocation(coords);
-                setLocationError('');
-            },
-            (err) => setLocationError(err.message || 'Location denied'),
+            (coords) => { setLocation(coords); setLocationError(''); },
+            (err)    => setLocationError(err.message || 'Location denied'),
         );
-        // Push every 30 seconds
-        locationPushRef.current = setInterval(async () => {
-            const loc = location;  // captured via closure — updated via ref below
-            if (loc && sessionRef.current) {
-                await updateGuardianLocation(sessionId, loc.lat, loc.lng);
-            }
-        }, 30_000);
-    }, [location]);
+        return () => {
+            stopWatchRef.current?.();
+            stopWatchRef.current = null;
+        };
+    }, [phase]);
 
-    // Push whenever location changes
-    const locationRef = useRef(location);
-    useEffect(() => { locationRef.current = location; }, [location]);
-
-    // Fix: use locationRef inside the interval instead of stale closure
+    // ── Location push — 10 s during SOS, 30 s otherwise ─────────────────────
+    // Uses locationRef to avoid stale-closure reads inside setInterval.
     useEffect(() => {
         if (phase !== 'active' || !session) return;
-        const id = setInterval(async () => {
+        const intervalMs = isSOS ? 10_000 : 30_000;
+        const id = setInterval(() => {
             if (locationRef.current) {
-                await updateGuardianLocation(session.id, locationRef.current.lat, locationRef.current.lng);
+                updateGuardianLocation(
+                    session.id,
+                    locationRef.current.lat,
+                    locationRef.current.lng,
+                ).catch(() => {}); // silent — GPS push is best-effort
             }
-        }, 30_000);
+        }, intervalMs);
         locationPushRef.current = id;
         return () => clearInterval(id);
-    }, [phase, session]);
+    }, [phase, session, isSOS]);
 
     // ── Check-in countdown ───────────────────────────────────────────────────
     const startCheckInTimer = useCallback((sessionId, totalSecs) => {
@@ -148,17 +163,28 @@ export default function GuardianMode() {
         }
     };
 
-    // ── SOS ─────────────────────────────────────────────────────────────────
+    // ── SOS ──────────────────────────────────────────────────────────────────
     const handleSOS = async () => {
         if (!session) return;
+        setSosConfirm(false);
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
+
         try {
             await triggerSOS(session.id);
             setIsSOS(true);
-            setSosConfirm(false);
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
             toast.error('🚨 SOS sent to your guardian!');
         } catch {
-            toast.error('SOS failed. Please call emergency services directly.');
+            // Network unavailable — fall back to native SMS so the alert still
+            // reaches a contact even without internet.
+            setIsSOS(true); // show local SOS state regardless
+            const mapsLink = locationRef.current
+                ? `https://maps.google.com/?q=${locationRef.current.lat},${locationRef.current.lng}`
+                : 'Location unavailable';
+            const body = encodeURIComponent(
+                `🚨 EMERGENCY — I need help! RedFlag SOS\n📍 ${mapsLink}`
+            );
+            window.location.href = `sms:?body=${body}`;
+            toast.error('🚨 Network unavailable — SMS app opened as fallback.');
         }
     };
 
@@ -199,41 +225,31 @@ export default function GuardianMode() {
     };
 
     // ── End session ──────────────────────────────────────────────────────────
-    const handleEnd = async () => {
+    // Uses endConfirm state instead of window.confirm() — confirm() is blocked in
+    // iOS PWA standalone mode and can silently swallow the action.
+    const handleEndRequest = () => setEndConfirm(true);
+
+    const handleEndConfirmed = useCallback(async () => {
+        setEndConfirm(false);
         if (!session) return;
-        if (!confirm('End this guardian session?')) return;
-        try {
-            await endGuardianSession(session.id);
-        } catch { /* ignore */ }
+        try { await endGuardianSession(session.id); } catch { /* best-effort */ }
         setPhase('ended');
         clearInterval(checkInTimerRef.current);
         clearInterval(locationPushRef.current);
-        if (stopWatchRef.current) stopWatchRef.current();
+        stopWatchRef.current?.();
+        wakeLockRef.current?.release().catch(() => {});
         if (navigator.vibrate) navigator.vibrate(0);
-    };
+    }, [session]);
 
     // ── Cleanup on unmount ───────────────────────────────────────────────────
     useEffect(() => {
         return () => {
             clearInterval(checkInTimerRef.current);
             clearInterval(locationPushRef.current);
-            if (stopWatchRef.current) stopWatchRef.current();
+            stopWatchRef.current?.();
+            wakeLockRef.current?.release().catch(() => {});
         };
     }, []);
-
-    // ── Start location watch on phase change ─────────────────────────────────
-    useEffect(() => {
-        if (phase === 'active' && session && isGeolocationSupported()) {
-            stopWatchRef.current = watchLocation(
-                (coords) => { setLocation(coords); setLocationError(''); },
-                (err) => setLocationError(err.message || 'Location denied'),
-            );
-        }
-        return () => {
-            if (stopWatchRef.current) { stopWatchRef.current(); stopWatchRef.current = null; }
-        };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [phase]);
 
     // ── Derived ──────────────────────────────────────────────────────────────
     const overdue = timeLeftSecs === 0 && phase === 'active';
@@ -502,12 +518,33 @@ export default function GuardianMode() {
                 )}
 
                 {/* End Session */}
-                <button
-                    onClick={handleEnd}
-                    className="w-full py-3 rounded-xl text-sm font-medium text-gray-400 border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                >
-                    End Session
-                </button>
+                {endConfirm ? (
+                    <div className="bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 space-y-3 text-center">
+                        <p className="font-semibold text-gray-800 dark:text-white text-sm">End guardian session?</p>
+                        <p className="text-xs text-gray-500">Your guardian will be notified the session has ended.</p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setEndConfirm(false)}
+                                className="flex-1 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 text-sm font-semibold"
+                            >
+                                Keep Active
+                            </button>
+                            <button
+                                onClick={handleEndConfirmed}
+                                className="flex-1 py-2.5 rounded-xl bg-gray-700 text-white text-sm font-bold"
+                            >
+                                End Session
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <button
+                        onClick={handleEndRequest}
+                        className="w-full py-3 rounded-xl text-sm font-medium text-gray-400 border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                        End Session
+                    </button>
+                )}
             </main>
         </div>
     );
