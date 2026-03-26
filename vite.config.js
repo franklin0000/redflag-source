@@ -85,6 +85,20 @@ export default defineConfig({
   build: {
     sourcemap: false,
     target: "esnext",
+    // mapbox-gl, wagmi/viem, and face-api are inherently large vendor libraries.
+    // They are split into separate chunks and only loaded when the relevant pages
+    // are visited (React.lazy). Raising the limit silences false-positive warnings.
+    chunkSizeWarningLimit: 2000,
+    modulePreload: {
+      // Only eagerly preload React core. Heavy vendor chunks (web3, mapbox, ML)
+      // are deferred — they load on-demand when the route that needs them is visited.
+      resolveDependencies: (_url, deps) =>
+        deps.filter(dep =>
+          dep.includes("vendor-react") ||
+          dep.includes("vendor-framer") ||
+          dep.includes("index-")
+        ),
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {

@@ -55,7 +55,7 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error('saferide create error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -69,7 +69,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -90,16 +90,30 @@ router.patch('/:id', optionalAuth, async (req, res) => {
   const set    = updates.map(([k], i) => `${k} = $${i + 2}`).join(', ');
   const values = [req.params.id, ...updates.map(([, v]) => v)];
 
+  // Ownership guard: only the sender or receiver may modify the session.
+  // Unauthenticated callers (optionalAuth) can update GPS coordinates for the
+  // tracking flow but must supply the session id — still safer than no check.
+  const userId = req.user?.id || null;
+
   try {
+    // When a user is authenticated, enforce ownership.
+    const ownershipClause = userId
+      ? `AND (sender_id = $${values.length + 1} OR receiver_id = $${values.length + 1})`
+      : '';
+    const queryValues = userId ? [...values, userId] : values;
+
     const { rows } = await db.query(
-      `UPDATE saferide_sessions SET ${set}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      values
+      `UPDATE saferide_sessions
+         SET ${set}, updated_at = NOW()
+       WHERE id = $1 ${ownershipClause}
+       RETURNING *`,
+      queryValues
     );
-    if (!rows.length) return res.status(404).json({ error: 'Session not found' });
+    if (!rows.length) return res.status(404).json({ error: 'Session not found or access denied' });
     res.json(rows[0]);
   } catch (err) {
     console.error('saferide update error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to update session' });
   }
 });
 

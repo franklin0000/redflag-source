@@ -439,7 +439,7 @@ router.get('/search', async (req, res) => {
     res.json({ results, source: 'openstreetmap' });
   } catch (err) {
     console.error('[places] OSM error:', err.message);
-    res.status(500).json({ error: err.message, results: [] });
+    res.status(500).json({ error: 'Internal server error', results: [] });
   }
 });
 

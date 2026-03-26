@@ -131,7 +131,7 @@ app.post('/api/upload_pic', (req, res) => {
   fetch(`${FACECHECK_BASE}/api/upload_pic`, { method: 'POST', headers, body: req })
     .then(r => r.json())
     .then(data => res.json(data))
-    .catch(err => res.status(500).json({ error: err.message }));
+    .catch(err => res.status(500).json({ error: 'Internal server error' }));
 });
 
 app.post('/api/search', (req, res) => {
@@ -146,7 +146,7 @@ app.post('/api/search', (req, res) => {
   })
     .then(r => r.json())
     .then(data => res.json(data))
-    .catch(err => res.status(500).json({ error: err.message }));
+    .catch(err => res.status(500).json({ error: 'Internal server error' }));
 });
 
 // ── API Routes ────────────────────────────────────────────────
@@ -217,7 +217,7 @@ app.post('/api/payment-intent', require('./middleware/auth').requireAuth, async 
       return res.json({ clientSecret: pi.client_secret });
     res.status(400).json({ error: 'Unexpected status: ' + pi.status });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -229,7 +229,7 @@ app.post('/api/sumsub-token', require('./middleware/auth').requireAuth, async (r
     const kycSession = await getKycSession(userId);
     res.json({ token: kycSession.token, provider: kycSession.provider, userId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

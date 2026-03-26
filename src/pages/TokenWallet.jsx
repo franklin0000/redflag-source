@@ -33,31 +33,57 @@ export default function TokenWallet() {
   const [claimingCheckin, setClaimingCheckin] = useState(false);
   const [spendingItem, setSpendingItem] = useState(null); // label of item being spent
 
-  const loadData = useCallback(async () => {
-    if (!address) { setLoading(false); return; }
-    setLoading(true);
+  // Pure data fetcher — returns wallet data without touching React state.
+  // Keeping setState out of this function lets us call it from effects without
+  // triggering the react-hooks/set-state-in-effect rule.
+  const fetchWalletData = useCallback(async () => {
+    if (!address) return null;
     const [bal, hist, ci] = await Promise.all([
       getRFLAGBalance(address),
       getRFLAGHistory(address),
       getCheckinStatus(address),
     ]);
-    setBalance(Number(bal).toLocaleString('en', { maximumFractionDigits: 2 }));
-    setHistory(hist);
-    setCheckin(ci);
-    setLoading(false);
+    return {
+      balance: Number(bal).toLocaleString('en', { maximumFractionDigits: 2 }),
+      history: hist,
+      checkin: ci,
+    };
   }, [address]);
 
-  // eslint-disable-next-line
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Reload balance after successful transaction
-  // eslint-disable-next-line
+  // Synchronise wallet state when the connected address changes.
+  // All setState calls live inside .then() — never synchronously in the effect body.
   useEffect(() => {
-    if (txSuccess) {
-      loadData();
-      setSpendingItem(null);
+    let cancelled = false;
+    if (!address) {
+      Promise.resolve().then(() => { if (!cancelled) setLoading(false); });
+      return () => { cancelled = true; };
     }
-  }, [txSuccess, loadData]);
+    fetchWalletData()
+      .then((data) => {
+        if (cancelled || !data) return;
+        setBalance(data.balance);
+        setHistory(data.history);
+        setCheckin(data.checkin);
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [address, fetchWalletData]);
+
+  // Quietly refresh balance after a successful on-chain transaction.
+  useEffect(() => {
+    if (!txSuccess) return;
+    let cancelled = false;
+    fetchWalletData()
+      .then((data) => {
+        if (cancelled || !data) return;
+        setBalance(data.balance);
+        setHistory(data.history);
+        setCheckin(data.checkin);
+        setSpendingItem(null);
+      });
+    return () => { cancelled = true; };
+  }, [txSuccess, fetchWalletData]);
 
   const handleCheckin = () => {
     if (!isConnected || !checkin.canClaim) return;

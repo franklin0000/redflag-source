@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -86,8 +86,8 @@ export default function CommunityRoom() {
 
     const isGenderRoom = roomId === 'women' || roomId === 'men';
 
-    // Mapper to match UI expectations
-    const mapPosts = (data) => {
+    // Stable mapper — memoised so the subscription effect doesn't re-run needlessly.
+    const mapPosts = useCallback((data) => {
         return data.map(p => {
             const defaultReactions = { '❤️': 0, '👏': 0, '😢': 0, '😡': 0 };
             const rawReplies = Array.isArray(p.replies) ? p.replies : [];
@@ -121,7 +121,7 @@ export default function CommunityRoom() {
                 commentsCount: p.comments_count || 0,
             };
         });
-    };
+    }, [isGenderRoom, roomId]);
 
     // Fetch and Subscribe
     useEffect(() => {
@@ -170,7 +170,7 @@ export default function CommunityRoom() {
             socket?.off('post_reaction_updated', onReactionUpdated);
             socket?.off('post_reply_added', onReplyAdded);
         };
-    }, [roomId, room]);
+    }, [roomId, room, mapPosts]);
 
 
     const detectFileType = (file) => {
@@ -396,7 +396,6 @@ export default function CommunityRoom() {
             setVerifyError(null);
         }
         return () => stopCamera();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [verifyModalOpen]);
 
     // Attach stream to video element whenever stream changes

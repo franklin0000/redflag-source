@@ -14,10 +14,10 @@ const fs = require('fs');
 const PYTHON_DIR = path.join(__dirname, '..', 'python');
 const DB_ROOT = path.join(PYTHON_DIR, 'db_images');
 
-// ── Simple admin check (first user = admin, or check role if you have it) ──
+// ── Admin check — user must be authenticated AND have is_admin = true in DB ──
 function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  // TODO: add role check if needed: if (req.user.role !== 'admin') return res.status(403)...
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
   next();
 }
 

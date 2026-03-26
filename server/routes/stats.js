@@ -14,7 +14,7 @@ router.get('/community', optionalAuth, async (req, res) => {
       totalUsers: parseInt(users.rows[0].count),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -40,7 +40,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
 
     res.json({ totalScans, reportsCount, daysProtected, safetyScore });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -60,7 +60,7 @@ router.get('/activity', optionalAuth, async (req, res) => {
       timestamp: r.created_at,
     })));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

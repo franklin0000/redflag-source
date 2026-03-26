@@ -13,7 +13,7 @@ router.get('/', optionalAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -31,7 +31,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (_io) _io.emit('flag:new', flag);
     res.status(201).json(flag);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -45,7 +45,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (!rowCount) return res.status(404).json({ error: 'Flag not found' });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

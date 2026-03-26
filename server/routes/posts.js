@@ -56,7 +56,7 @@ router.get('/', optionalAuth, async (req, res) => {
         is_verified: false
       })));
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -80,7 +80,7 @@ router.get('/', optionalAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -114,7 +114,7 @@ router.post('/', requireAuth, async (req, res) => {
       getIO()?.to(`community:${room_id}`).emit('new_community_post', post);
       return;
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -135,7 +135,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Broadcast to community room in real-time
     getIO()?.to(`community:${room_id}`).emit('new_community_post', post);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -157,7 +157,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (!rowCount) return res.status(404).json({ error: 'Not found or not yours' });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -190,7 +190,7 @@ router.post('/:id/react', requireAuth, async (req, res) => {
     // Broadcast reaction change
     getIO()?.to(`community:${postRows[0].room_id}`).emit('post_reaction_updated', { postId: req.params.id, reactions });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -224,7 +224,7 @@ router.post('/:id/reply', requireAuth, async (req, res) => {
     // Broadcast reply
     getIO()?.to(`community:${postRows[0].room_id}`).emit('post_reply_added', { postId: req.params.id, reply });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -243,7 +243,7 @@ router.get('/:id/comments', optionalAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -260,7 +260,7 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
     const comment = { ...rows[0], user_name: req.user.name, user_avatar: req.user.avatar_url };
     res.status(201).json(comment);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

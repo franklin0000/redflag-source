@@ -40,7 +40,7 @@ router.get('/', optionalAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -64,7 +64,7 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error('[DIO Security] Hash/Report generation error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -84,7 +84,7 @@ router.post('/:id/evidence', upload.single('file'), async (req, res) => {
     if (!rows.length) return res.status(403).json({ error: 'Unauthorized or report not found' });
     res.json({ evidence_urls: rows[0].evidence_urls });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -98,7 +98,7 @@ router.post('/:id/upvote', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Report not found' });
     res.json({ upvotes: rows[0].upvotes });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -117,7 +117,7 @@ router.get('/count', optionalAuth, async (_req, res) => {
     const { rows } = await db.query('SELECT COUNT(*) FROM reports');
     res.json({ count: parseInt(rows[0].count) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -134,7 +134,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Report not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -152,7 +152,7 @@ router.get('/:id/comments', optionalAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -169,7 +169,7 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -183,7 +183,7 @@ router.post('/:id/comments/:commentId/upvote', requireAuth, async (req, res) => 
     if (!rows.length) return res.status(404).json({ error: 'Comment not found' });
     res.json({ upvotes: rows[0].upvotes });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -18,7 +18,7 @@ router.get('/me', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'User not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -33,7 +33,7 @@ router.get('/blocked', requireAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -49,7 +49,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'User not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -95,7 +95,7 @@ router.patch('/me', requireAuth, async (req, res) => {
     );
     res.json(updatedRows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -256,7 +256,7 @@ router.post('/avatar', requireAuth, (req, res, next) => {
     );
     res.json({ url: rows[0].avatar_url });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -270,7 +270,7 @@ router.patch('/me/subscription', requireAuth, async (req, res) => {
     );
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -280,7 +280,7 @@ router.delete('/me', requireAuth, async (req, res) => {
     await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -301,7 +301,7 @@ router.post('/me/verify', requireAuth, async (req, res) => {
     }
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -311,7 +311,7 @@ router.get('/me/settings', requireAuth, async (req, res) => {
     const { rows } = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
     res.json(rows[0]?.settings || {});
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -324,7 +324,7 @@ router.patch('/me/settings', requireAuth, async (req, res) => {
     );
     res.json(rows[0].settings);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -337,7 +337,7 @@ router.post('/block/:id', requireAuth, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -350,7 +350,7 @@ router.delete('/block/:id', requireAuth, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -363,7 +363,7 @@ router.get('/mute/:matchId', requireAuth, async (req, res) => {
     );
     res.json({ muted: rows.length > 0 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -376,7 +376,7 @@ router.post('/mute/:matchId', requireAuth, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -389,7 +389,7 @@ router.delete('/mute/:matchId', requireAuth, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

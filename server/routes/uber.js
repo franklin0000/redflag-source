@@ -29,19 +29,25 @@ router.get('/callback', async (req, res) => {
             }
         });
 
-        const { access_token, refresh_token, expires_in } = response.data;
+        const { access_token, refresh_token } = response.data;
 
-        // Ideally, we'd store this in the database for the user.
-        // For now, we'll store it and also return a script to save it in localStorage on the frontend.
-        // This aligns with safeRideService.js expecting 'rf_uber_token' in localStorage.
+        // Escape tokens before embedding in HTML to prevent XSS via malformed OAuth responses.
+        const escapeHtmlAttr = (str) =>
+          String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+        const safeAccessToken  = escapeHtmlAttr(access_token);
+        const safeRefreshToken = escapeHtmlAttr(refresh_token);
+
+        // Store tokens in localStorage via a script tag.
+        // TODO: migrate to HttpOnly cookie + server-side session for better XSS protection.
         res.send(`
       <html>
+        <head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'"></head>
         <body>
           <script>
-            localStorage.setItem('rf_uber_token', '${access_token}');
-            localStorage.setItem('rf_uber_refresh', '${refresh_token}');
-            window.location.href = '/#/dating/chat'; 
+            localStorage.setItem('rf_uber_token', '${safeAccessToken}');
+            localStorage.setItem('rf_uber_refresh', '${safeRefreshToken}');
+            window.location.href = '/#/dating/chat';
           </script>
           <h1>Uber Connected Successfully!</h1>
           <p>Redirecting you back to the app...</p>

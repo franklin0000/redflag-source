@@ -73,7 +73,7 @@ router.get('/profile/:userId', requireAuth, async (req, res) => {
     res.json({ ...profile, reportCount, sharedInterests: shared, compatibility });
   } catch (err) {
     console.error('profile/:userId error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -86,7 +86,7 @@ router.get('/profile', requireAuth, async (req, res) => {
     );
     res.json(rows[0] || null);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -113,7 +113,7 @@ router.post('/profile', requireAuth, async (req, res) => {
     }
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -171,7 +171,7 @@ router.get('/matches/potential', requireAuth, async (req, res) => {
     res.json(profiles);
   } catch (err) {
     console.error('Potential matches error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -216,7 +216,7 @@ router.post('/swipe', requireAuth, async (req, res) => {
     }
     res.json({ isMatch });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -255,7 +255,7 @@ router.get('/matches', requireAuth, async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -290,7 +290,7 @@ router.get('/messages/:matchId', requireAuth, async (req, res) => {
 
     res.json(decryptedRows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -335,7 +335,7 @@ router.post('/messages/:matchId', requireAuth, async (req, res) => {
 
     res.status(201).json(message);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -351,7 +351,7 @@ router.patch('/messages/:matchId/read', requireAuth, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -368,7 +368,7 @@ router.delete('/messages/:matchId/all', requireAuth, async (req, res) => {
     await db.query('DELETE FROM messages WHERE match_id = $1', [matchId]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -384,7 +384,7 @@ router.get('/match-with/:partnerId', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'No match found' });
     res.json({ match_id: rows[0].id });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

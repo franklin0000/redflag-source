@@ -162,7 +162,7 @@ export default function DateCheckIn() {
                 window.location.href = `sms:${phones.join(',')}?body=${encodedMsg}`;
             }
         }
-    }, [contacts, toast, meetingProfile, user, location]);
+    }, [contacts, toast, meetingProfile, user]);
 
     // Start guard
     const startTimer = () => {
@@ -235,7 +235,7 @@ export default function DateCheckIn() {
         toast.error(`🚨 SOS ACTIVATED! Siren playing & calling ${emergencyNumber.label}...`);
 
         notifyContacts('SOS ALERT', sosMessage, mapsLink);
-    }, [contacts, location, toast, emergencyNumber, notifyContacts, user]);
+    }, [location, toast, emergencyNumber, notifyContacts, user]);
 
     // Stop panic (silence alarm)
     const stopPanic = () => {
@@ -284,7 +284,7 @@ export default function DateCheckIn() {
             }, 0);
         }
         return () => clearInterval(timerRef.current);
-    }, [timeLeft]);
+    }, [timeLeft, handlePanic, notifyContacts, stopTracking, toast]);
 
     // Pre-panic warning countdown
     useEffect(() => {

@@ -27,7 +27,7 @@ router.post('/sms', requireAuth, async (req, res) => {
     res.json({ success: true, sid: result.sid, status: result.status });
   } catch (err) {
     console.error('Twilio SMS error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -73,7 +73,7 @@ router.post('/call/emergency', requireAuth, async (req, res) => {
     res.json({ success: true, sid: call.sid, status: call.status });
   } catch (err) {
     console.error('Twilio Call error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -98,20 +98,30 @@ router.post('/call', requireAuth, async (req, res) => {
     res.json({ success: true, sid: call.sid, status: call.status });
   } catch (err) {
     console.error('Twilio Call error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+// Escape XML special characters to prevent XML/TwiML injection.
+function escapeXml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 // Voicemail/Twiml for automated messages
 router.post('/voicemail', async (req, res) => {
-  const message = req.query.message || 'This is an automated message from RedFlag.';
-  
-  const twiml = `
-<?xml version="1.0" encoding="UTF-8"?>
+  const rawMessage = req.query.message || 'This is an automated message from RedFlag.';
+  const safeMessage = escapeXml(rawMessage);
+
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">${message}</Say>
+  <Say voice="alice">${safeMessage}</Say>
 </Response>`;
-  
+
   res.type('text/xml');
   res.send(twiml);
 });

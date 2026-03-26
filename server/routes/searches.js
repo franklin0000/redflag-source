@@ -99,7 +99,7 @@ router.post('/background-check', requireAuth, upload.single('file'), async (req,
     const combined = [...(pyResult.results || []), ...tineyeResults];
     res.json({ status: 'success', results: combined });
   } catch (err) {
-    if (!res.headersSent) res.status(500).json({ error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -164,7 +164,7 @@ router.get('/', requireAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -177,7 +177,7 @@ router.get('/count', requireAuth, async (req, res) => {
     );
     res.json({ count: parseInt(rows[0].count) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -191,7 +191,7 @@ router.post('/', requireAuth, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

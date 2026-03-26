@@ -19,7 +19,7 @@ router.post('/sessions', requireAuth, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -34,7 +34,7 @@ router.get('/sessions/mine', requireAuth, async (req, res) => {
     );
     res.json(rows[0] || null);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -48,7 +48,7 @@ router.get('/sessions/:id', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -64,7 +64,7 @@ router.get('/view/:token', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Session expired or not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -132,7 +132,7 @@ router.patch('/sessions/:id/location', requireAuth, async (req, res) => {
     
     res.json({ ok: true, autoSosTriggered: triggerAutoSos });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -149,7 +149,7 @@ router.post('/sessions/:id/checkin', requireAuth, async (req, res) => {
     if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:update', rows[0]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -172,7 +172,7 @@ router.post('/sessions/:id/sos', requireAuth, async (req, res) => {
     if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:sos', { session: rows[0], location });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -189,7 +189,7 @@ router.post('/sessions/:id/sos/cancel', requireAuth, async (req, res) => {
     if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:update', rows[0]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -204,7 +204,7 @@ router.post('/sessions/:id/end', requireAuth, async (req, res) => {
     if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:ended');
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

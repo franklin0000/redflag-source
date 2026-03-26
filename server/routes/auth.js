@@ -50,7 +50,7 @@ router.post('/register', registerLimiter, async (req, res) => {
     res.status(201).json({ user, token, refresh_token: refresh });
   } catch (err) {
     console.error('Register error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -74,7 +74,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     res.json({ user, token, refresh_token: refresh });
   } catch (err) {
     console.error('Login error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -138,7 +138,7 @@ router.post('/forgot-password', resetLimiter, async (req, res) => {
     // TODO: send email with reset link in production
     res.json({ message: 'If that email exists, a reset link was sent.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -160,7 +160,7 @@ router.post('/reset-password', async (req, res) => {
     );
     res.json({ message: 'Password updated successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -198,7 +198,7 @@ router.post('/wallet', async (req, res) => {
     res.json({ user, token, refresh_token: refresh });
   } catch (err) {
     console.error('Wallet auth error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -217,7 +217,7 @@ router.patch('/password', require('../middleware/auth').requireAuth, async (req,
     await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
     res.json({ message: 'Password changed successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

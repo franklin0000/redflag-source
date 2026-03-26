@@ -28,7 +28,7 @@ router.get('/', requireAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -38,7 +38,7 @@ router.patch('/read-all', requireAuth, async (req, res) => {
     await db.query('UPDATE notifications SET is_read=TRUE WHERE user_id=$1', [req.user.id]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -51,7 +51,7 @@ router.get('/unread-count', requireAuth, async (req, res) => {
     );
     res.json({ count: parseInt(rows[0].count) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -76,7 +76,7 @@ router.post('/subscribe', requireAuth, async (req, res) => {
     
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -87,7 +87,7 @@ router.post('/unsubscribe', requireAuth, async (req, res) => {
     await db.query('DELETE FROM push_subscriptions WHERE user_id = $1', [req.user.id]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
