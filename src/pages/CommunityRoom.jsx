@@ -211,53 +211,54 @@ export default function CommunityRoom() {
         setFileType(null);
     };
 
-    // Verify Gender Access
+    // Verify Gender Access — run only when user/roomId changes, not on every render
+    // toast and navigate are stable refs, excluded from deps intentionally
+    const accessCheckedRef = useRef(false);
+    useEffect(() => {
+        accessCheckedRef.current = false; // reset when room/user changes
+    }, [user?.id, user?.gender, user?.gender_verified, roomId]);
+
     useEffect(() => {
         if (!user || !room) return;
+        if (accessCheckedRef.current) return;
+        accessCheckedRef.current = true;
 
-        // Configuration for gender restriction
-        const restrictions = {
-            women: 'female',
-            men: 'male'
-        };
-
+        const restrictions = { women: 'female', men: 'male' };
         const requiredGender = restrictions[roomId];
-        if (requiredGender) {
-            // Normalize gender
-            let userGender = (user.gender || '').toLowerCase().trim();
-            if (userGender === 'mujer') userGender = 'female';
-            if (userGender === 'hombre') userGender = 'male';
+        if (!requiredGender) return; // general room — open to all
 
-            // Step 1 — no gender set → show selection modal
-            if (!userGender) {
-                setGenderModalOpen(true);
-                return;
-            }
+        let userGender = (user.gender || '').toLowerCase().trim();
+        if (userGender === 'mujer') userGender = 'female';
+        if (userGender === 'hombre') userGender = 'male';
 
-            // Step 2 — non-binary → redirect to mixed room
-            if (userGender === 'other' || userGender === 'non-binary') {
-                toast.info('Este room es privado. Te redirigimos al Community Hub.');
-                navigate('/community/general');
-                return;
-            }
-
-            // Step 3 — wrong gender → blocked
-            if (userGender !== requiredGender) {
-                const label = requiredGender === 'female' ? 'mujeres' : 'hombres';
-                toast.error(`Acceso restringido: Esta sala es solo para ${label}.`);
-                navigate('/community');
-                return;
-            }
-
-            // Step 4 — correct gender but not verified → show AI verification
-            if (!user.gender_verified) {
-                setVerifyModalOpen(true);
-                return;
-            }
-
-            // ✅ Gender matches and verified — access granted
+        // Step 1 — no gender set → show selection modal
+        if (!userGender) {
+            setGenderModalOpen(true);
+            return;
         }
-    }, [user, roomId, room, navigate, toast]);
+
+        // Step 2 — non-binary → redirect to mixed room
+        if (userGender === 'other' || userGender === 'non-binary') {
+            toast.info('Este room es privado. Te redirigimos al Community Hub.');
+            navigate('/community/general');
+            return;
+        }
+
+        // Step 3 — wrong gender → blocked
+        if (userGender !== requiredGender) {
+            const label = requiredGender === 'female' ? 'mujeres' : 'hombres';
+            toast.error(`Acceso restringido: Esta sala es solo para ${label}.`);
+            navigate('/community');
+            return;
+        }
+
+        // Step 4 — correct gender but not verified → show AI verification
+        if (!user.gender_verified) {
+            setVerifyModalOpen(true);
+        }
+        // ✅ Gender matches and verified — access granted
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, roomId, room]);
 
 
     const handleReact = async (postId, emoji) => {
