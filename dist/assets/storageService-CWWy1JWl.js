@@ -1,0 +1,1 @@
+import{b as n}from"./index-BzKO8IBh.js";async function d(a,e,o="photos"){return n(a,`redflag/${e}/${o}`)}async function t(a,e){return n(a,`redflag/${e}/evidence`)}async function u(a,e){return n(a,`redflag/chat/${e}`)}export{d as a,t as b,u};
