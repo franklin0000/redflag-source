@@ -186,7 +186,16 @@ router.post('/background-check', requireAuth, upload.single('file'), async (req,
   try {
     let imageBuffer = null;
     if (imagePath) {
-      try { imageBuffer = fs.readFileSync(imagePath); } catch {}
+      try {
+        imageBuffer = fs.readFileSync(imagePath);
+      } catch {
+        // Upload middleware may have already deleted the file and stored it as
+        // a base64 data URL in req.fileUrl (for images < 2MB without Cloudinary).
+        if (req.fileUrl && req.fileUrl.startsWith('data:')) {
+          const b64 = req.fileUrl.split(',')[1];
+          if (b64) imageBuffer = Buffer.from(b64, 'base64');
+        }
+      }
     }
 
     // Run all engines in parallel
