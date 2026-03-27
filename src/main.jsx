@@ -8,15 +8,17 @@ import { registerSW } from 'virtual:pwa-register';
 
 // Register PWA Service Worker — auto-reload on new version
 registerSW({
-  immediate: true,
   onNeedRefresh() {
-    // New SW installed: reload so the app picks up new JS chunks
-    window.location.reload();
+    // Guard against infinite reload loops (multiple rapid deploys)
+    if (!sessionStorage.getItem('sw_refreshed')) {
+      sessionStorage.setItem('sw_refreshed', '1');
+      window.location.reload();
+    }
   },
   onOfflineReady() {},
   onRegistered(r) {
-    // Poll for updates every 30 s so stale clients update quickly
-    r && setInterval(() => r.update(), 30_000);
+    // Poll for updates every 60 s
+    r && setInterval(() => r.update(), 60_000);
   },
 });
 
