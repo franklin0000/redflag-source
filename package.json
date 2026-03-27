@@ -50,7 +50,7 @@
     "viem": "^2.46.2",
     "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-pwa": "^1.2.0",
-    "wagmi": "^3.5.0"
+    "wagmi": "^2.14.11"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

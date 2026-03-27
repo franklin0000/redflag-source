@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext';
 
 export default function EmojiEditor({ onClose, onSave }) {
     const { user } = useAuth();
-    const { toast } = useToast();
+    const toast = useToast();
 
     // Editor State
     const [config, setConfig] = useState({
