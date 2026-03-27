@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AdComponent from '../components/AdComponent';
@@ -101,14 +101,8 @@ export default function CommunityHub() {
                     return (
                         <div
                             key={room.id}
-                            onClick={() => accessible && navigate(`/community/${room.id}`)}
-                            className={`
-                                relative group overflow-hidden rounded-3xl border transition-all duration-300
-                                ${accessible
-                                    ? `bg-white dark:bg-[#1a1525] ${room.borderColor} hover:border-opacity-60 shadow-xl ${room.glow} hover:-translate-y-1 cursor-pointer active:scale-[0.98]`
-                                    : 'bg-gray-100 dark:bg-white/5 border-transparent opacity-50 cursor-not-allowed grayscale'
-                                }
-                            `}
+                            onClick={() => navigate(`/community/${room.id}`)}
+                            className={`relative group overflow-hidden rounded-3xl border transition-all duration-300 bg-white dark:bg-[#1a1525] ${room.borderColor} hover:border-opacity-60 shadow-xl ${room.glow} hover:-translate-y-1 cursor-pointer active:scale-[0.98]`}
                         >
                             <div className="p-5 relative z-10">
                                 <div className="flex items-center gap-4 mb-3">
@@ -118,23 +112,19 @@ export default function CommunityHub() {
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
                                             <h3 className="text-lg font-bold">{room.name}</h3>
-                                            {!accessible && <span className="material-icons text-gray-400 text-base">lock</span>}
+                                            {room.gender && !accessible && <span className="material-icons text-gray-400 text-base">lock</span>}
                                         </div>
                                         <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">{room.subtitle}</p>
                                     </div>
-                                    {accessible && (
-                                        <span className="material-icons text-gray-400 group-hover:text-primary transition-colors">chevron_right</span>
-                                    )}
+                                    <span className="material-icons text-gray-400 group-hover:text-primary transition-colors">chevron_right</span>
                                 </div>
 
                                 <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">{room.description}</p>
 
                                 {/* Latest Post Preview */}
-                                {accessible && (
-                                    <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 mb-3 border border-gray-100 dark:border-white/5">
-                                        <p className="text-xs text-gray-600 dark:text-gray-300 italic line-clamp-2">{room.latestPost}</p>
-                                    </div>
-                                )}
+                                <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 mb-3 border border-gray-100 dark:border-white/5">
+                                    <p className="text-xs text-gray-600 dark:text-gray-300 italic line-clamp-2">{room.latestPost}</p>
+                                </div>
 
                                 {/* Stats */}
                                 <div className="flex items-center gap-4">
@@ -148,19 +138,15 @@ export default function CommunityHub() {
                                         <span className="font-medium">{room.postsToday}</span>
                                         <span>posts today</span>
                                     </div>
-                                    {accessible && (
-                                        <div className="ml-auto flex items-center gap-1 text-xs text-green-500">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                            Active now
-                                        </div>
-                                    )}
+                                    <div className="ml-auto flex items-center gap-1 text-xs text-green-500">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                        Active now
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Decorative glow */}
-                            {accessible && (
-                                <div className={`absolute -right-6 -bottom-6 w-28 h-28 bg-gradient-to-br ${room.gradient} rounded-full blur-3xl opacity-10 group-hover:opacity-25 transition-opacity`} />
-                            )}
+                            <div className={`absolute -right-6 -bottom-6 w-28 h-28 bg-gradient-to-br ${room.gradient} rounded-full blur-3xl opacity-10 group-hover:opacity-25 transition-opacity`} />
                         </div>
                     );
                 })}
