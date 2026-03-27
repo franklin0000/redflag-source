@@ -14,7 +14,7 @@ const isChunkError = (error) => {
 export default class ErrorBoundary extends React.Component {
     constructor(props) {
         super(props);
-        this.state = { hasError: false, error: null, reloading: false };
+        this.state = { hasError: false, error: null, reloading: false, componentStack: null };
     }
 
     static getDerivedStateFromError(error) {
@@ -23,6 +23,7 @@ export default class ErrorBoundary extends React.Component {
 
     componentDidCatch(error, errorInfo) {
         console.error('ErrorBoundary caught:', error, errorInfo);
+        this.setState({ componentStack: errorInfo?.componentStack || null });
         // Auto-reload once for chunk load errors (stale service worker cache after deploy)
         if (isChunkError(error) && !sessionStorage.getItem('rf_eb_reloaded')) {
             sessionStorage.setItem('rf_eb_reloaded', '1');
@@ -48,8 +49,13 @@ export default class ErrorBoundary extends React.Component {
                                 : 'An unexpected error occurred.'}
                         </p>
                         {errMsg && (
-                            <p className="text-xs text-gray-600 mb-4 font-mono bg-black/30 rounded p-2 text-left break-all">
+                            <p className="text-xs text-red-400 mb-2 font-mono bg-black/30 rounded p-2 text-left break-all">
                                 {errMsg}
+                            </p>
+                        )}
+                        {this.state.componentStack && (
+                            <p className="text-xs text-gray-500 mb-4 font-mono bg-black/20 rounded p-2 text-left break-all whitespace-pre-wrap" style={{maxHeight:'120px',overflow:'auto'}}>
+                                {this.state.componentStack.trim().split('\n').slice(0,6).join('\n')}
                             </p>
                         )}
                         <button

@@ -26,7 +26,7 @@ import './index.css';
 class GlobalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, componentStack: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -35,15 +35,18 @@ class GlobalErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error("Global Startup Error:", error, errorInfo);
+    this.setState({ componentStack: errorInfo?.componentStack || null });
   }
 
   render() {
     if (this.state.hasError) {
+      const stack = this.state.componentStack || '';
+      const shortStack = stack.split('\n').slice(0, 8).join('\n');
       return (
         <div style={{ padding: 20, color: 'white', background: '#333', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
           <h1 style={{ color: '#ff4d4f' }}>Startup Error</h1>
-          <pre style={{ background: '#000', padding: 20, borderRadius: 8, maxWidth: '80%', overflow: 'auto' }}>
-            {this.state.error?.toString()}
+          <pre style={{ background: '#000', padding: 20, borderRadius: 8, maxWidth: '90%', overflow: 'auto', fontSize: 11, textAlign: 'left' }}>
+            {this.state.error?.toString()}{shortStack ? '\n\nIn:' + shortStack : ''}
           </pre>
           <button onClick={() => window.location.reload()} style={{ marginTop: 20, padding: '10px 20px', cursor: 'pointer' }}>
             Retry
