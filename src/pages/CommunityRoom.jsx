@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { postsApi, usersApi, uploadFile } from '../services/api';
+import { postsApi, usersApi, uploadFile, datingApi } from '../services/api';
 import { getSocket } from '../services/socketService';
 
 const ROOM_CONFIG = {
@@ -497,6 +497,16 @@ export default function CommunityRoom() {
         }
     };
 
+    const handleStartDM = async (partnerId) => {
+        try {
+            await datingApi.initiateDM(partnerId);
+            navigate(`/dating/chat/${partnerId}`);
+        } catch (err) {
+            toast.error('Could not open chat. Please try again.');
+            console.error('DM initiate error:', err);
+        }
+    };
+
     if (!room) {
         navigate('/community');
         return null; 
@@ -629,6 +639,16 @@ export default function CommunityRoom() {
                             </button>
                             <span className="text-[10px] text-gray-400">{totalReactions(post.reactions)} reactions</span>
                             <div className="ml-auto flex items-center gap-2">
+                                {/* Private DM button — only in general room, only on other users' posts */}
+                                {!isGenderRoom && post.userId && post.ownerId !== user?.id && (
+                                    <button
+                                        onClick={() => handleStartDM(post.userId)}
+                                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-primary transition-colors"
+                                        title="Send private message"
+                                    >
+                                        <span className="material-icons text-sm">mail_outline</span>
+                                    </button>
+                                )}
                                 {post.ownerId === user?.id && (
                                     <button
                                         onClick={() => setDeleteModal(post.id)}

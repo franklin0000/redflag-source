@@ -388,4 +388,37 @@ router.get('/match-with/:partnerId', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/dating/dm/initiate/:partnerId — find or create a private DM match
+// Used by CommunityHub to open a private chat with any user.
+router.post('/dm/initiate/:partnerId', requireAuth, async (req, res) => {
+  const { partnerId } = req.params;
+  const userId = req.user.id;
+
+  if (partnerId === userId) return res.status(400).json({ error: 'Cannot DM yourself' });
+
+  try {
+    // Verify partner exists
+    const { rows: partner } = await db.query('SELECT id FROM users WHERE id = $1', [partnerId]);
+    if (!partner.length) return res.status(404).json({ error: 'User not found' });
+
+    // Find existing match
+    const { rows: existing } = await db.query(
+      'SELECT id FROM matches WHERE (user1_id=$1 AND user2_id=$2) OR (user1_id=$2 AND user2_id=$1)',
+      [userId, partnerId]
+    );
+    if (existing.length) return res.json({ matchId: existing[0].id, partnerId });
+
+    // Create new DM (order user IDs for consistent UNIQUE constraint)
+    const [u1, u2] = [userId, partnerId].sort();
+    const { rows: created } = await db.query(
+      'INSERT INTO matches (user1_id, user2_id) VALUES ($1, $2) ON CONFLICT (user1_id, user2_id) DO UPDATE SET created_at = matches.created_at RETURNING id',
+      [u1, u2]
+    );
+    res.json({ matchId: created[0].id, partnerId });
+  } catch (err) {
+    console.error('DM initiate error:', err);
+    res.status(500).json({ error: 'Failed to initiate DM' });
+  }
+});
+
 module.exports = router;

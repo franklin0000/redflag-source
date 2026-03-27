@@ -137,6 +137,8 @@ export const datingApi = {
     request(`/api/dating/messages/${matchId}/read`, { method: 'PATCH' }),
   deleteMessages: (matchId) =>
     request(`/api/dating/messages/${matchId}/all`, { method: 'DELETE' }),
+  initiateDM: (partnerId) =>
+    request(`/api/dating/dm/initiate/${partnerId}`, { method: 'POST' }),
 };
 
 // ── POSTS ─────────────────────────────────────────────────────
