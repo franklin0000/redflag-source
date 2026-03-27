@@ -80,7 +80,7 @@ router.patch('/me', requireAuth, async (req, res) => {
         `INSERT INTO dating_profiles (user_id, gender) VALUES ($1,$2)
          ON CONFLICT (user_id) DO UPDATE SET gender=$2`,
         [req.user.id, gender]
-      ).catch(() => {});
+      );
     }
     // Return the updated user with gender and verification status
     const { rows: updatedRows } = await db.query(
@@ -116,7 +116,7 @@ const selfieUpload = multer({
     if (!file.mimetype.startsWith('image/')) return cb(new Error('Images only'), false);
     cb(null, true);
   },
-}).single('selfie');
+}).single('file');
 
 router.post('/verify-gender', requireAuth, (req, res, next) => {
   selfieUpload(req, res, (err) => {
