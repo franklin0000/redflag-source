@@ -7,6 +7,100 @@ const upload = require('../middleware/upload');
 const crypto = require('crypto');
 const fs = require('fs');
 
+// Manual deep-search links always shown when a photo is uploaded
+const MANUAL_SEARCH_LINKS = [
+  { title: 'FaceCheck.id', url: 'https://facecheck.id/', icon: 'face' },
+  { title: 'Google Images', url: 'https://images.google.com/', icon: 'image_search' },
+  { title: 'Yandex Images', url: 'https://yandex.com/images/', icon: 'travel_explore' },
+  { title: 'TinEye', url: 'https://tineye.com/', icon: 'image_search' },
+  { title: 'PimEyes', url: 'https://pimeyes.com/', icon: 'manage_search' },
+  { title: 'Bing Visual', url: 'https://www.bing.com/visualsearch', icon: 'search' },
+];
+
+// ── FaceCheck.id — real face-recognition reverse search ──────────────────────
+// Uses Node 20 native globals: fetch, FormData, Blob
+async function callFaceCheck(imageBuffer) {
+  const token = process.env.VITE_FACECHECK_TOKEN;
+  if (!token) return [];
+  try {
+    // 1. Upload photo
+    const form = new FormData();
+    form.set('images', new Blob([imageBuffer], { type: 'image/jpeg' }), 'photo.jpg');
+
+    const upRes = await fetch('https://facecheck.id/api/upload_pic', {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: form,
+    });
+    if (!upRes.ok) return [];
+    const upData = await upRes.json();
+    const idSearch = upData.id_search;
+    if (!idSearch) return [];
+
+    // 2. Poll for results (max 30 s, 2 s intervals)
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const pollRes = await fetch('https://facecheck.id/api/search', {
+        method: 'POST',
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_search: idSearch, with_progress: true, status_only: false, demo: false }),
+      });
+      if (!pollRes.ok) continue;
+      const pollData = await pollRes.json();
+      if (pollData.output?.items?.length) {
+        return pollData.output.items.slice(0, 10).map(item => ({
+          score: Math.round((item.score || 0.5) * 100),
+          url: item.url || '',
+          group: 'Face Match',
+          title: (item.url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || 'Profile Found',
+          icon: 'face',
+          isRisk: true,
+          isTargetedSearch: false,
+          imgSrc: item.image_url || null,
+        })).filter(r => r.url);
+      }
+      if (pollData.error) break;
+    }
+    return [];
+  } catch (e) {
+    console.error('FaceCheck error:', e.message);
+    return [];
+  }
+}
+
+// ── Yandex Vision — image copy search (reverse image lookup) ─────────────────
+async function callYandexVision(imageBuffer) {
+  const apiKey = process.env.VITE_YANDEX_VISION_KEY;
+  const folderId = process.env.YANDEX_FOLDER_ID || 'b1g5d3bsuqm0ivg26kvg';
+  if (!apiKey) return [];
+  try {
+    const base64Image = imageBuffer.toString('base64');
+    const res = await fetch('https://vision.api.cloud.yandex.net/vision/v1/batchAnalyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Api-Key ${apiKey}` },
+      body: JSON.stringify({
+        folderId,
+        analyzeSpecs: [{ content: base64Image, features: [{ type: 'IMAGE_COPY_SEARCH' }] }],
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const pages = data.results?.[0]?.results?.[0]?.imageCopySearch?.pages || [];
+    return pages.slice(0, 10).map(page => ({
+      score: Math.round((page.imageScore || 0.5) * 100),
+      url: page.url || '',
+      group: 'Visual Match',
+      title: page.title || (page.url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || 'Image Found',
+      icon: 'travel_explore',
+      isRisk: true,
+      isTargetedSearch: false,
+    })).filter(r => r.url);
+  } catch (e) {
+    console.error('Yandex Vision error:', e.message);
+    return [];
+  }
+}
+
 // ── TinEye helper ─────────────────────────────────────────────────────────────
 // Requires env vars: TINEYE_API_KEY and TINEYE_API_SECRET
 async function callTinEye(imagePath) {
@@ -86,19 +180,49 @@ function runBackgroundCheck(imagePath, usernameQuery) {
 
 // ── POST /api/searches/background-check ──────────────────────────────────────
 router.post('/background-check', requireAuth, upload.single('file'), async (req, res) => {
-  const imagePath = req.file ? req.file.path : 'none';
+  const imagePath = req.file ? req.file.path : null;
   const usernameQuery = req.body.username || '';
 
   try {
-    // Run Python scanner and TinEye in parallel
-    const [pyResult, tineyeResults] = await Promise.all([
-      runBackgroundCheck(imagePath, usernameQuery),
-      callTinEye(imagePath)
+    let imageBuffer = null;
+    if (imagePath) {
+      try { imageBuffer = fs.readFileSync(imagePath); } catch {}
+    }
+
+    // Run all engines in parallel
+    const [faceCheckResults, yandexResults, tineyeResults, pyResult] = await Promise.all([
+      imageBuffer ? callFaceCheck(imageBuffer) : Promise.resolve([]),
+      imageBuffer ? callYandexVision(imageBuffer) : Promise.resolve([]),
+      imagePath ? callTinEye(imagePath) : Promise.resolve([]),
+      // Python for local DB face search (fails gracefully if deps missing)
+      imagePath ? runBackgroundCheck(imagePath, usernameQuery) : Promise.resolve({ results: [] }),
     ]);
 
-    const combined = [...(pyResult.results || []), ...tineyeResults];
+    // Clean up temp file
+    if (imagePath) fs.unlink(imagePath, () => {});
+
+    // Manual deep-search links always included when a photo was uploaded
+    const manualLinks = imagePath ? MANUAL_SEARCH_LINKS.map(link => ({
+      score: 0,
+      url: link.url,
+      group: 'Deep Search',
+      title: link.title,
+      icon: link.icon,
+      isRisk: false,
+      isTargetedSearch: true,
+    })) : [];
+
+    const combined = [
+      ...faceCheckResults,
+      ...yandexResults,
+      ...tineyeResults,
+      ...(pyResult.results || []),
+      ...manualLinks,
+    ];
+
     res.json({ status: 'success', results: combined });
   } catch (err) {
+    console.error('background-check error:', err.message);
     if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
 });
