@@ -6,13 +6,17 @@ import SplashScreen from './components/SplashScreen.jsx';
 import { Web3Provider } from './context/Web3Provider';
 import { registerSW } from 'virtual:pwa-register';
 
-// Register PWA Service Worker
+// Register PWA Service Worker — auto-reload on new version
 registerSW({
+  immediate: true,
   onNeedRefresh() {
-    console.log("New content available, click on reload button to update.");
+    // New SW installed: reload so the app picks up new JS chunks
+    window.location.reload();
   },
-  onOfflineReady() {
-    console.log("App is ready to work offline.");
+  onOfflineReady() {},
+  onRegistered(r) {
+    // Poll for updates every 30 s so stale clients update quickly
+    r && setInterval(() => r.update(), 30_000);
   },
 });
 
