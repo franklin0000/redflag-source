@@ -31,7 +31,8 @@ export const AuthProvider = ({ children }) => {
                     setUser(normalizeUser(data.user));
                     try { connectSocket(); } catch (e) { console.warn('[Auth] socket init failed:', e); }
                 }
-            } catch {
+            } catch (err) {
+                console.warn('[Auth] Session restore failed:', err?.message || err);
                 setToken(null);
                 setRefreshToken(null);
             } finally {

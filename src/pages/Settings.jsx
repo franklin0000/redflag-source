@@ -114,10 +114,8 @@ export default function Settings() {
     };
 
     // ── Two-Factor Authentication (coming soon) ────────────────────────────
-    const handleTwoFAChange = (val) => {
-        // 2FA via TOTP is not yet implemented — show placeholder
-        setTwoFA(val);
-        updateSetting('twoFactorEnabled', val);
+    const handleTwoFAChange = () => {
+        toast.info('Two-Factor Authentication coming soon!');
     };
 
     const handleTotpVerify = () => {};

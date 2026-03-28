@@ -33,7 +33,9 @@ function roomAccessDenied(user, roomId) {
 
 // GET /api/posts — community feed (optional user_id and room_id filter)
 router.get('/', optionalAuth, async (req, res) => {
-  const { limit = 20, offset = 0, user_id, room_id } = req.query;
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  const { user_id, room_id } = req.query;
 
   // Gender-restricted room: deny access if gender doesn't match
   const denied = roomAccessDenied(req.user, room_id);
@@ -61,7 +63,7 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 
   try {
-    const params = [parseInt(limit), parseInt(offset)];
+    const params = [limit, offset];
     const conditions = [];
     if (user_id) { params.push(user_id); conditions.push(`p.user_id = $${params.length}`); }
     if (room_id) { params.push(room_id); conditions.push(`p.room_id = $${params.length}`); }

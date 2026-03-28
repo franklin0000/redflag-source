@@ -1,68 +1,37 @@
-// ── DIO-LEVEL ARCHITECTURE: E2E ENCRYPTION SERVICE ────────────
-// Implements Signal Protocol for secure payload transportation.
-// In a true E2EE architecture, these keys live exclusively on the 
-// client device. For this simulated backend enforcement scale, we
-// provide the cipher interface as requested.
-
-const Signal = require('@privacyresearch/libsignal-protocol-typescript');
-const crypto = require('crypto');
-
-// Simulated Key Store (In-memory for fallback session derivation)
-const store = {
-  getIdentityKeyPair: async () => ({ pubKey: Buffer.alloc(32), privKey: Buffer.alloc(32) }),
-  getLocalRegistrationId: async () => 12345,
-  isTrustedIdentity: async () => true,
-  loadPreKey: async () => undefined,
-  loadSession: async () => undefined,
-  loadSignedPreKey: async () => undefined,
-  saveIdentity: async () => {},
-  saveSession: async () => {},
-  savePreKey: async () => {},
-  saveSignedPreKey: async () => {}
-};
+// ── E2EE Service — transparent pass-through ──────────────────────────────────
+// Real Signal Protocol E2EE requires client-side key generation and exchange.
+// Until that is implemented, messages are stored as plain UTF-8 (no false
+// encryption promises to users).  The interface is kept stable so a real
+// implementation can be swapped in without changing call sites.
 
 /**
- * Encrypts a message payload prior to storage/transit using libsignal-protocol.
- * @param {string} senderId 
- * @param {string} recipientId 
- * @param {string} message 
+ * "Encrypts" a message — currently a transparent pass-through.
+ * Returns a structure compatible with the dating route's send/receive flow.
+ * @param {string} _senderId
+ * @param {string} _recipientId
+ * @param {string} message
  */
-async function encryptMessage(senderId, recipientId, message) {
+async function encryptMessage(_senderId, _recipientId, message) {
+  return {
+    type: 1,
+    body: Buffer.from(message, 'utf8').toString('base64'),
+    registrationId: 0,
+  };
+}
+
+/**
+ * "Decrypts" a message — base64 decodes the stored body.
+ * @param {string} _senderId
+ * @param {string} _recipientId
+ * @param {object} cipherData
+ */
+async function decryptMessage(_senderId, _recipientId, cipherData) {
+  if (!cipherData?.body) return '';
   try {
-    // In production, getSession() pulls the established Signal session state.
-    // const sessionAddress = new Signal.SignalProtocolAddress(recipientId, 1);
-    // const sessionCipher = new Signal.SessionCipher(store, sessionAddress);
-    // const ciphertext = await sessionCipher.encrypt(Buffer.from(message, 'utf8'));
-    
-    // Fallback: For immediate drop-in, if sessions aren't built by the client yet:
-    const cipher = crypto.createCipheriv('aes-256-gcm', crypto.randomBytes(12), crypto.randomBytes(32));
-    let encrypted = cipher.update(message, 'utf8', 'base64');
-    encrypted += cipher.final('base64');
-    
-    // We return a structure pretending to be a Signal message payload
-    return {
-      type: 3, // PreKey Whisper Message
-      body: Buffer.from(encrypted).toString('base64'),
-      registrationId: 12345
-    };
-  } catch (err) {
-    console.error('[DIO Security] E2EE Error:', err);
-    throw new Error('Encryption failed');
+    return Buffer.from(cipherData.body, 'base64').toString('utf8');
+  } catch {
+    return cipherData.body;
   }
 }
 
-/**
- * Decrypts a Signal protocol message based on session established
- * @param {string} senderId 
- * @param {string} recipientId 
- * @param {object} cipherData 
- */
-async function decryptMessage(senderId, recipientId, cipherData) {
-  // Real implementation decrypts via SessionCipher
-  return Buffer.from(cipherData.body, 'base64').toString('utf8');
-}
-
-module.exports = {
-  encryptMessage,
-  decryptMessage
-};
+module.exports = { encryptMessage, decryptMessage };

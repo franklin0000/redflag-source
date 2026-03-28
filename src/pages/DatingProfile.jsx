@@ -96,7 +96,7 @@ export default function DatingProfile() {
         try {
             await createDatingProfile({
                 bio,
-                age: parseInt(age),
+                age: Math.min(120, Math.max(18, parseInt(age) || 18)),
                 gender: gender || null,
                 photos: photos.length > 0 ? photos : ['https://placehold.co/400x600?text=No+Photo'],
                 interests,

@@ -36,8 +36,16 @@ export default function Verification() {
             setStream(mediaStream);
             if (videoRef.current) videoRef.current.srcObject = mediaStream;
             setStep(1);
-        } catch {
-            toast.error("No se pudo acceder a la cámara. Verifica los permisos.");
+        } catch (err) {
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                toast.error('Permiso de cámara denegado. Ve a Configuración del navegador y permite el acceso.');
+            } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                toast.error('No se encontró cámara en este dispositivo.');
+            } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                toast.error('La cámara está siendo usada por otra app. Ciérrala e intenta de nuevo.');
+            } else {
+                toast.error('No se pudo acceder a la cámara. Verifica los permisos.');
+            }
         }
     };
 

@@ -68,9 +68,18 @@ export default function ChatRoom() {
     const [isSending, setIsSending] = useState(false);
     const fileInputRef = useRef(null);
 
+    // Revoke blob URLs to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            if (filePreview) URL.revokeObjectURL(filePreview);
+        };
+    }, [filePreview]);
+
     const handleFileSelect = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        // Revoke previous preview before creating a new one
+        if (filePreview) URL.revokeObjectURL(filePreview);
         setSelectedFile(file);
         if (file.type.startsWith('image/')) {
             setFileType('image');

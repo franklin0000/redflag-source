@@ -417,15 +417,19 @@ io.on('connection', (socket) => {
 
   // Typing indicator
   socket.on('typing', async ({ matchId: rawMatchId, isTyping }) => {
-    const matchId = await resolveMatchId(rawMatchId, userId);
-    socket.to(`match:${matchId}`).emit('typing', { matchId: rawMatchId, userId, isTyping });
+    try {
+      const matchId = await resolveMatchId(rawMatchId, userId);
+      if (!matchId) return;
+      socket.to(`match:${matchId}`).emit('typing', { matchId: rawMatchId, userId, isTyping });
+    } catch (err) {
+      console.error('typing error:', err.message);
+    }
   });
 
   // WebRTC call signaling — matchId must be included in payload so receivers can filter
   socket.on('call:signal', async ({ matchId: rawMatchId, signal, from, type, callType }) => {
-    console.log('[Socket] call:signal received:', { rawMatchId, from, type, callType });
-    const matchId = await resolveMatchId(rawMatchId, userId);
-    console.log('[Socket] Resolved matchId:', matchId);
+    const matchId = await resolveMatchId(rawMatchId, userId).catch(() => null);
+    if (!matchId) return;
     socket.to(`match:${matchId}`).emit('call:signal', { matchId: rawMatchId, signal, from, type, callType });
 
     // For call offers, also deliver directly to partner's personal room so they
@@ -447,14 +451,24 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call:end', async ({ matchId: rawMatchId }) => {
-    const matchId = await resolveMatchId(rawMatchId);
-    socket.to(`match:${matchId}`).emit('call:end', { matchId: rawMatchId });
+    try {
+      const matchId = await resolveMatchId(rawMatchId);
+      if (!matchId) return;
+      socket.to(`match:${matchId}`).emit('call:end', { matchId: rawMatchId });
+    } catch (err) {
+      console.error('call:end error:', err.message);
+    }
   });
 
   // Live Radar — location sharing
   socket.on('location:update', async ({ matchId: rawMatchId, lat, lng }) => {
-    const matchId = await resolveMatchId(rawMatchId, userId);
-    socket.to(`match:${matchId}`).emit('location:update', { userId, lat, lng });
+    try {
+      const matchId = await resolveMatchId(rawMatchId, userId);
+      if (!matchId) return;
+      socket.to(`match:${matchId}`).emit('location:update', { userId, lat, lng });
+    } catch (err) {
+      console.error('location:update error:', err.message);
+    }
   });
 
   // Video Call Real-Time Room & Tokens

@@ -134,7 +134,9 @@ router.post('/verify-gender', requireAuth, (req, res, next) => {
 
   // Validate the selfie is a real image (minimum 5KB — blank/corrupt images are smaller)
   let fileSize = 0;
-  try { fileSize = fs.statSync(selfiePath).size; } catch {}
+  try { fileSize = fs.statSync(selfiePath).size; } catch (statErr) {
+    console.warn('[verify-gender] Could not stat selfie file:', statErr.message);
+  }
 
   if (fileSize < 5000) {
     fs.unlink(selfiePath, () => {});
@@ -286,8 +288,12 @@ router.delete('/me', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/users/me/verify — mark user as verified
+// POST /api/users/me/verify — mark user as verified (admin only)
+// Self-verification without KYC is not allowed; verification must be granted by admin.
 router.post('/me/verify', requireAuth, async (req, res) => {
+  if (!req.user.is_admin) {
+    return res.status(403).json({ error: 'Admin access required to grant verification' });
+  }
   const { gender } = req.body;
   try {
     const { rows } = await db.query(

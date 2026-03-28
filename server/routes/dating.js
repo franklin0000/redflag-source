@@ -93,6 +93,19 @@ router.get('/profile', requireAuth, async (req, res) => {
 // POST /api/dating/profile — create or update dating profile
 router.post('/profile', requireAuth, async (req, res) => {
   const { bio, age, gender, photos, interests, location, lat, lng } = req.body;
+
+  // Input validation
+  const parsedAge = age != null ? Math.min(120, Math.max(18, parseInt(age) || 18)) : null;
+  const sanitizedBio = bio ? String(bio).slice(0, 1000) : null;
+  const parsedLat = lat != null ? parseFloat(lat) : null;
+  const parsedLng = lng != null ? parseFloat(lng) : null;
+  if (parsedLat !== null && (parsedLat < -90 || parsedLat > 90)) {
+    return res.status(400).json({ error: 'Invalid latitude (must be -90 to 90)' });
+  }
+  if (parsedLng !== null && (parsedLng < -180 || parsedLng > 180)) {
+    return res.status(400).json({ error: 'Invalid longitude (must be -180 to 180)' });
+  }
+
   try {
     const { rows } = await db.query(
       `INSERT INTO dating_profiles (user_id, bio, age, gender, photos, interests, location, lat, lng, updated_at)
@@ -103,8 +116,8 @@ router.post('/profile', requireAuth, async (req, res) => {
          location=EXCLUDED.location, lat=EXCLUDED.lat, lng=EXCLUDED.lng,
          updated_at=NOW()
        RETURNING *`,
-      [req.user.id, bio, age || null, gender || null,
-      photos || [], interests || [], location || null, lat || null, lng || null]
+      [req.user.id, sanitizedBio, parsedAge, gender || null,
+      photos || [], interests || [], location || null, parsedLat, parsedLng]
     );
     // also update user lat/lng for geo queries
     if (lat && lng) {
@@ -179,6 +192,10 @@ router.get('/matches/potential', requireAuth, async (req, res) => {
 router.post('/swipe', requireAuth, async (req, res) => {
   const { target_id, direction } = req.body;
   if (!target_id || !direction) return res.status(400).json({ error: 'target_id and direction required' });
+  const VALID_DIRECTIONS = ['left', 'right', 'superlike'];
+  if (!VALID_DIRECTIONS.includes(direction)) {
+    return res.status(400).json({ error: `direction must be one of: ${VALID_DIRECTIONS.join(', ')}` });
+  }
   try {
     await db.query(
       `INSERT INTO swipes (swiper_id, swiped_id, direction)
@@ -277,13 +294,13 @@ router.get('/messages/:matchId', requireAuth, async (req, res) => {
       [matchId]
     );
 
-    // ── DIO-LEVEL ARCHITECTURE: DECRYPT SIGNAL PAYLOADS ─────────
     const decryptedRows = await Promise.all(rows.map(async msg => {
+      if (!msg.content) return msg;
       try {
         const partnerId = msg.sender_id === req.user.id ? req.user.id : msg.sender_id;
         msg.content = await decryptMessage(req.user.id, partnerId, { body: msg.content });
-      } catch (err) {
-        msg.content = '[Encrypted Message - Unreadable]';
+      } catch {
+        // Leave content as-is if decryption fails (plain text messages)
       }
       return msg;
     }));

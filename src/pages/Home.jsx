@@ -55,18 +55,16 @@ export default function Home() {
 
         const loadDashboard = async () => {
             setStatsLoading(true);
-            try {
-                const [userStats, communityStats] = await Promise.all([
-                    getUserDashboardStats(user?.id),
-                    getCommunityStats(),
-                ]);
-                setStats(userStats);
-                setCommunity(communityStats);
-            } catch (err) {
-                console.warn('Dashboard load failed:', err);
-            } finally {
-                setStatsLoading(false);
-            }
+            // Fetch independently so one failure doesn't block the other
+            const [userStatsResult, communityResult] = await Promise.allSettled([
+                getUserDashboardStats(user?.id),
+                getCommunityStats(),
+            ]);
+            if (userStatsResult.status === 'fulfilled') setStats(userStatsResult.value);
+            else console.warn('User stats failed:', userStatsResult.reason);
+            if (communityResult.status === 'fulfilled') setCommunity(communityResult.value);
+            else console.warn('Community stats failed:', communityResult.reason);
+            setStatsLoading(false);
         };
 
         loadDashboard();

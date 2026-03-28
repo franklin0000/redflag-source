@@ -24,7 +24,7 @@ export const callService = {
       activePeer = peer;
 
       peer.on('signal', data => {
-        console.log('[callService] Emitting call:signal', { matchId, from: userId, type: 'offer', callType: type });
+        if (import.meta.env.DEV) console.log('[callService] Emitting call:signal', { matchId, from: userId, type: 'offer', callType: type });
         socket().emit('call:signal', {
           matchId,
           signal: data,
@@ -95,11 +95,11 @@ export const callService = {
     const s = socket();
 
     const handleSignal = (payload) => {
-      console.log('[callService] Received call:signal:', { payloadMatchId: payload.matchId, expectedMatchId: matchId, from: payload.from, userId });
+      if (import.meta.env.DEV) console.log('[callService] Received call:signal:', { payloadMatchId: payload.matchId, expectedMatchId: matchId, from: payload.from, userId });
       if (payload.matchId !== matchId) return;
       const { signal, from, type, callType } = payload;
       if (from === userId) return;
-      console.log('[callService] Processing incoming call:', { type, callType });
+      if (import.meta.env.DEV) console.log('[callService] Processing incoming call:', { type, callType });
       if (type === 'offer') onIncomingCall({ signal, from, callType });
       else if (type === 'answer' && onAnswer) onAnswer(signal);
     };
@@ -200,7 +200,7 @@ export const callService = {
       return stream;
     } catch (err) {
       if (err.name === 'NotAllowedError') {
-        console.log('Screen share cancelled');
+        if (import.meta.env.DEV) console.log('Screen share cancelled');
       } else {
         console.error('Screen share error:', err);
       }

@@ -108,6 +108,14 @@ async function callTinEye(imagePath) {
   const apiSecret = process.env.TINEYE_API_SECRET;
   if (!apiKey || !apiSecret || !imagePath || imagePath === 'none') return [];
 
+  // Guard against path traversal: ensure path stays within the upload directory
+  const uploadDir = path.resolve(process.env.UPLOAD_DIR || require('os').tmpdir());
+  const resolvedPath = path.resolve(imagePath);
+  if (!resolvedPath.startsWith(uploadDir + path.sep) && !resolvedPath.startsWith(require('os').tmpdir() + path.sep)) {
+    console.warn('[TinEye] Rejected path outside upload dir:', imagePath);
+    return [];
+  }
+
   try {
     const date = Math.floor(Date.now() / 1000);
     const nonce = crypto.randomBytes(12).toString('hex');

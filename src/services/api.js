@@ -63,23 +63,32 @@ async function request(path, options = {}) {
   }
 }
 
+// Mutex to prevent multiple concurrent token refreshes
+let _refreshPromise = null;
+
 async function tryRefresh() {
+  if (_refreshPromise) return _refreshPromise;
   const refresh_token = getRefreshToken();
   if (!refresh_token) return false;
-  try {
-    const res = await fetch(`${BASE}/api/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    setToken(data.token);
-    setRefreshToken(data.refresh_token);
-    return true;
-  } catch {
-    return false;
-  }
+  _refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      setToken(data.token);
+      setRefreshToken(data.refresh_token);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+  return _refreshPromise;
 }
 
 // ── AUTH ──────────────────────────────────────────────────────

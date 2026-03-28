@@ -26,8 +26,9 @@ const AdComponent = ({
         }
     }, [user?.isPaid]);
 
-    // Don't render anything if user is paid
-    if (user?.isPaid) {
+    // Don't render anything if user is paid or no real publisher ID is configured
+    const publisherId = import.meta.env.VITE_ADSENSE_PUBLISHER_ID;
+    if (user?.isPaid || !publisherId || publisherId.includes('XXXX')) {
         return null;
     }
 
@@ -41,7 +42,7 @@ const AdComponent = ({
             <ins
                 className="adsbygoogle z-10 relative"
                 style={style}
-                data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" // Replace with actual Publisher ID
+                data-ad-client={publisherId}
                 data-ad-slot={slot}
                 data-ad-format={format}
                 data-full-width-responsive={responsive}

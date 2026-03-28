@@ -31,22 +31,18 @@ router.get('/callback', async (req, res) => {
 
         const { access_token, refresh_token } = response.data;
 
-        // Escape tokens before embedding in HTML to prevent XSS via malformed OAuth responses.
-        const escapeHtmlAttr = (str) =>
-          String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // Use JSON.stringify to safely embed token strings in JS — handles all special chars
+        // including backslashes, newlines, and quotes that break naive string interpolation.
+        const safeAccessToken  = JSON.stringify(String(access_token));
+        const safeRefreshToken = JSON.stringify(String(refresh_token));
 
-        const safeAccessToken  = escapeHtmlAttr(access_token);
-        const safeRefreshToken = escapeHtmlAttr(refresh_token);
-
-        // Store tokens in localStorage via a script tag.
-        // TODO: migrate to HttpOnly cookie + server-side session for better XSS protection.
         res.send(`
       <html>
         <head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'"></head>
         <body>
           <script>
-            localStorage.setItem('rf_uber_token', '${safeAccessToken}');
-            localStorage.setItem('rf_uber_refresh', '${safeRefreshToken}');
+            localStorage.setItem('rf_uber_token', ${safeAccessToken});
+            localStorage.setItem('rf_uber_refresh', ${safeRefreshToken});
             window.location.href = '/#/dating/chat';
           </script>
           <h1>Uber Connected Successfully!</h1>
