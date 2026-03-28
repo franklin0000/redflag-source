@@ -83,8 +83,10 @@ export default function Login() {
                 stack: err?.stack?.split('\n')[0],
             });
 
+            const stackLine = err?.stack?.split('\n').slice(1, 3).join(' ').trim() || '';
             addStep('Conectando al servidor', 'error', err?.message || 'unknown');
-            addStep('Fallo', 'error', `${err?.name || 'Error'}: ${err?.message || ''}`);
+            addStep('Fallo', 'error', `${err?.name}: ${err?.message}`);
+            if (stackLine) addStep('Stack', 'error', stackLine);
 
             let msg = err.message || 'Error al iniciar sesión.';
             const code = err.code || '';

@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
                 const data = await authApi.me();
                 if (mountedRef.current && data && data.user) {
                     setUser(normalizeUser(data.user));
-                    connectSocket();
+                    try { connectSocket(); } catch (e) { console.warn('[Auth] socket init failed:', e); }
                 }
             } catch {
                 setToken(null);
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
         setToken(data.token);
         setRefreshToken(data.refresh_token);
         if (mountedRef.current) setUser(normalizeUser(data.user));
-        connectSocket();
+        try { connectSocket(); } catch (e) { console.warn('[Auth] socket init failed:', e); }
         return data;
     };
 
@@ -63,7 +63,7 @@ export const AuthProvider = ({ children }) => {
         setToken(data.token);
         setRefreshToken(data.refresh_token);
         if (mountedRef.current) setUser(normalizeUser(data.user));
-        connectSocket();
+        try { connectSocket(); } catch (e) { console.warn('[Auth] socket init failed:', e); }
         return data;
     };
 
