@@ -16,8 +16,8 @@ const config = createConfig(
         // Required
         appName: "RedFlag Dating",
         appDescription: "Secure Dating on Blockchain",
-        appUrl: "https://redflag.io",
-        appIcon: "https://redflag.io/logo.png",
+        appUrl: "https://redflag-source.onrender.com",
+        appIcon: "https://redflag-source.onrender.com/vite.svg",
         chains,
     }),
 );

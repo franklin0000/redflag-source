@@ -71,7 +71,8 @@ async function callFaceCheck(imageBuffer) {
 // ── Yandex Vision — image copy search (reverse image lookup) ─────────────────
 async function callYandexVision(imageBuffer) {
   const apiKey = process.env.VITE_YANDEX_VISION_KEY;
-  const folderId = process.env.YANDEX_FOLDER_ID || 'b1g5d3bsuqm0ivg26kvg';
+  const folderId = process.env.YANDEX_FOLDER_ID;
+  if (!folderId) return [];
   if (!apiKey) return [];
   try {
     const base64Image = imageBuffer.toString('base64');
@@ -167,7 +168,7 @@ function runBackgroundCheck(imagePath, usernameQuery) {
         ...process.env,
         VITE_YANDEX_VISION_KEY: process.env.VITE_YANDEX_VISION_KEY,
         VITE_FACECHECK_TOKEN: process.env.VITE_FACECHECK_TOKEN,
-        YANDEX_FOLDER_ID: process.env.YANDEX_FOLDER_ID || 'b1g5d3bsuqm0ivg26kvg',
+        YANDEX_FOLDER_ID: process.env.YANDEX_FOLDER_ID || '',
         DEBUG_SCANNER: 'true'
       }
     });

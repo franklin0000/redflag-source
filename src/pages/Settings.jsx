@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { userExtras, authExtras, getToken } from '../services/api';
 import { secureRemove } from '../services/secureStorage';
 
@@ -33,6 +34,7 @@ function Modal({ title, onClose, children }) {
 export default function Settings() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
+    const toast = useToast();
 
     const [loading, setLoading] = useState(false);
     const [twoFA, setTwoFA] = useState(false);
@@ -118,7 +120,9 @@ export default function Settings() {
         toast.info('Two-Factor Authentication coming soon!');
     };
 
-    const handleTotpVerify = () => {};
+    const handleTotpVerify = () => {
+        toast.info('Two-Factor Authentication coming soon!');
+    };
     const handleTotpUnenroll = async () => {
         setTwoFA(false);
         updateSetting('twoFactorEnabled', false);

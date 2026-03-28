@@ -248,8 +248,8 @@ router.post('/avatar', requireAuth, (req, res, next) => {
       // No Cloudinary — convert to base64 data URL so it persists across restarts
       const fileBuffer = fs.readFileSync(filePath);
       fs.unlink(filePath, () => {});
-      if (fileBuffer.length > 2 * 1024 * 1024) {
-        return res.status(400).json({ error: 'Photo too large (max 2MB). Please compress it first or set up Cloudinary.' });
+      if (fileBuffer.length > 1.5 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Photo too large (max 1.5MB). Please compress it first.' });
       }
       avatarUrl = `data:${req.file.mimetype};base64,${fileBuffer.toString('base64')}`;
     }

@@ -32,7 +32,7 @@ function friendlyError(err) {
 
 export default function WalletSignInButton({ onSuccess, onError, label = 'Sign in with Wallet' }) {
     const { address, isConnected, chainId, connector } = useAccount();
-    const { mutateAsync: wagmiSign } = useSignMessage();
+    const { signMessageAsync: wagmiSign } = useSignMessage();
     const { setOpen } = useModal();
     const [pending, setPending] = useState(false);
     const [step, setStep] = useState(0); // 0=idle, 1=connect, 2=sign, 3=auth

@@ -254,12 +254,20 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
   const { content } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: 'content required' });
   try {
+    // Check if post is in a gender room (anonymous context)
+    const { rows: postRows } = await db.query('SELECT room_id FROM posts WHERE id=$1', [req.params.id]);
+    const isGenderRoom = !!ROOM_GENDER[postRows[0]?.room_id];
+
     const { rows } = await db.query(
       `INSERT INTO comments (user_id, post_id, content)
        VALUES ($1, $2, $3) RETURNING *`,
       [req.user.id, req.params.id, content.trim()]
     );
-    const comment = { ...rows[0], user_name: req.user.name, user_avatar: req.user.avatar_url };
+    const comment = {
+      ...rows[0],
+      user_name: isGenderRoom ? null : req.user.name,
+      user_avatar: isGenderRoom ? null : req.user.avatar_url,
+    };
     res.status(201).json(comment);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

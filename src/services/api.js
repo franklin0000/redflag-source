@@ -30,9 +30,13 @@ async function request(path, options = {}) {
     res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
   } catch (err) {
     clearTimeout(timeoutId);
-    // Convert AbortError / TimeoutError into a readable message
-    if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+    // Convert actual timeouts into a readable "starting up" message (common on Render free tier)
+    if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('timed out')) {
       throw new Error('Server is starting up — please wait a moment and try again');
+    }
+    // Generic network errors (e.g. ECONNREFUSED) should not be masked as "starting up"
+    if (err.message?.includes('Failed to fetch')) {
+        throw new Error('Could not connect to the server. Please check your internet connection.');
     }
     throw err;
   } finally {

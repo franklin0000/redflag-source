@@ -17,18 +17,19 @@ router.setIo = (io) => { _io = io; };
 
 // POST /api/guardian/sessions — create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { dater_name, date_location, check_in_minutes = 30 } = req.body;
+  const { dater_name, date_location, contacts } = req.body;
   const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hours
+  const notes = [dater_name && `Name: ${dater_name}`, date_location && `Location: ${date_location}`]
+    .filter(Boolean).join(' | ') || null;
   try {
     const { rows } = await db.query(
-      `INSERT INTO guardian_sessions
-         (dater_id, session_token, dater_name, date_location, check_in_minutes, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.user.id, token, dater_name || req.user.name, date_location, check_in_minutes, expiresAt]
+      `INSERT INTO guardian_sessions (user_id, token, status, notes, contacts)
+       VALUES ($1,$2,'active',$3,$4) RETURNING *`,
+      [req.user.id, token, notes, JSON.stringify(contacts || [])]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
+    console.error('[guardian] create session:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -38,12 +39,13 @@ router.get('/sessions/mine', requireAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT * FROM guardian_sessions
-       WHERE dater_id=$1 AND is_active=TRUE AND expires_at > NOW()
+       WHERE user_id=$1 AND status='active'
        ORDER BY created_at DESC LIMIT 1`,
       [req.user.id]
     );
     res.json(rows[0] || null);
   } catch (err) {
+    console.error('[guardian] get mine:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -52,12 +54,13 @@ router.get('/sessions/mine', requireAuth, async (req, res) => {
 router.get('/sessions/:id', requireAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      'SELECT * FROM guardian_sessions WHERE id=$1 AND dater_id=$2',
+      'SELECT * FROM guardian_sessions WHERE id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
     res.json(rows[0]);
   } catch (err) {
+    console.error('[guardian] get session:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -66,19 +69,19 @@ router.get('/sessions/:id', requireAuth, async (req, res) => {
 router.get('/view/:token', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, session_token, dater_name, date_location, check_in_minutes,
-              is_active, is_sos, sentiment, last_checkin_at, location, expires_at, created_at
-       FROM guardian_sessions WHERE session_token=$1 AND is_active=TRUE AND expires_at > NOW()`,
+      `SELECT id, token, notes, status, lat, lng, location, contacts, created_at
+       FROM guardian_sessions WHERE token=$1 AND status='active'`,
       [req.params.token]
     );
     if (!rows.length) return res.status(404).json({ error: 'Session expired or not found' });
     res.json(rows[0]);
   } catch (err) {
+    console.error('[guardian] view:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ── DIO-LEVEL ARCHITECTURE: PREDICTIVE GEOFENCING ──────────────
+// ── PREDICTIVE GEOFENCING ────────────────────────────────────────
 function getDistanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const p1 = lat1 * Math.PI/180, p2 = lat2 * Math.PI/180;
@@ -95,56 +98,51 @@ router.patch('/sessions/:id/location', requireAuth, async (req, res) => {
   if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return res.status(400).json({ error: 'Valid lat (-90 to 90) and lng (-180 to 180) are required' });
   }
-  
+
   try {
-    // 1. Fetch current session state for geofence analysis
-    const { rows: currentSession } = await db.query(
-      'SELECT location, is_sos FROM guardian_sessions WHERE id=$1 AND dater_id=$2',
+    // Fetch current session for geofence analysis
+    const { rows: current } = await db.query(
+      'SELECT lat, lng, token FROM guardian_sessions WHERE id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     );
-
-    if (!currentSession.length) return res.status(404).json({ error: 'Session not found' });
-    const session = currentSession[0];
+    if (!current.length) return res.status(404).json({ error: 'Session not found' });
 
     let triggerAutoSos = false;
-    let newSentiment = 'normal';
+    const prev = current[0];
 
-    // Predictive deviation logic: If a previous location exists and the user suddenly jumps > 200m
-    // away from their last safe point in a single ping (possible kidnapping/forced vehicle entry).
-    // In a full implementation, this compares against Polyline route coordinates.
-    if (session.location) {
-      try {
-        const lastLoc = typeof session.location === 'string' ? JSON.parse(session.location) : session.location;
-        if (lastLoc.lat && lastLoc.lng) {
-          const dist = getDistanceMeters(lat, lng, lastLoc.lat, lastLoc.lng);
-          if (dist > 200 && !session.is_sos) {
-             triggerAutoSos = true;
-             newSentiment = 'critical_deviation';
-             console.warn(`[DIO Security] Predictive Geofence Alert: User deviated ${Math.round(dist)}m suddenly.`);
-          }
-        }
-      } catch (e) { /* ignore parse errors */ }
+    if (prev.lat != null && prev.lng != null) {
+      const dist = getDistanceMeters(lat, lng, prev.lat, prev.lng);
+      if (dist > 200) {
+        triggerAutoSos = true;
+        console.warn(`[Guardian] Geofence alert: user deviated ${Math.round(dist)}m suddenly.`);
+      }
     }
 
     const { rows } = await db.query(
       `UPDATE guardian_sessions
-       SET location=$1, 
-           last_checkin_at=NOW(),
-           is_sos = CASE WHEN $4::boolean = TRUE THEN TRUE ELSE is_sos END,
-           sentiment = CASE WHEN $4::boolean = TRUE THEN $5 ELSE sentiment END
-       WHERE id=$2 AND dater_id=$3 RETURNING *`,
-      [JSON.stringify({ lat, lng, updatedAt: new Date().toISOString() }), req.params.id, req.user.id, triggerAutoSos, newSentiment]
+       SET lat=$1, lng=$2, location=$3
+       WHERE id=$4 AND user_id=$5 RETURNING *`,
+      [lat, lng, JSON.stringify({ lat, lng, updatedAt: new Date().toISOString() }), req.params.id, req.user.id]
     );
 
+    if (triggerAutoSos) {
+      // Log SOS alert
+      await db.query(
+        'INSERT INTO sos_alerts (user_id, lat, lng, message) VALUES ($1,$2,$3,$4)',
+        [req.user.id, lat, lng, 'Auto SOS: Geofence deviation > 200m']
+      );
+    }
+
     if (_io) {
-      _io.to(`guardian:${rows[0].session_token}`).emit('guardian:location', { lat, lng, alert: triggerAutoSos });
+      _io.to(`guardian:${rows[0].token}`).emit('guardian:location', { lat, lng, alert: triggerAutoSos });
       if (triggerAutoSos) {
-         _io.to(`guardian:${rows[0].session_token}`).emit('guardian:sos', { session: rows[0], reason: 'Geofence Deviation > 200m' });
+        _io.to(`guardian:${rows[0].token}`).emit('guardian:sos', { session: rows[0], reason: 'Geofence Deviation > 200m' });
       }
     }
-    
+
     res.json({ ok: true, autoSosTriggered: triggerAutoSos });
   } catch (err) {
+    console.error('[guardian] location update:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -153,15 +151,15 @@ router.patch('/sessions/:id/location', requireAuth, async (req, res) => {
 router.post('/sessions/:id/checkin', requireAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `UPDATE guardian_sessions
-       SET last_checkin_at=NOW(), sentiment='normal', is_sos=FALSE
-       WHERE id=$1 AND dater_id=$2 RETURNING *`,
+      `UPDATE guardian_sessions SET status='active'
+       WHERE id=$1 AND user_id=$2 AND status='active' RETURNING *`,
       [req.params.id, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
-    if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:update', rows[0]);
+    if (_io) _io.to(`guardian:${rows[0].token}`).emit('guardian:update', rows[0]);
     res.json({ ok: true });
   } catch (err) {
+    console.error('[guardian] checkin:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -169,22 +167,25 @@ router.post('/sessions/:id/checkin', requireAuth, async (req, res) => {
 // POST /api/guardian/sessions/:id/sos — trigger SOS
 router.post('/sessions/:id/sos', sosLimiter, requireAuth, async (req, res) => {
   const { location } = req.body;
+  const lat = location?.lat ? parseFloat(location.lat) : null;
+  const lng = location?.lng ? parseFloat(location.lng) : null;
   try {
     const { rows } = await db.query(
-      `UPDATE guardian_sessions
-       SET is_sos=TRUE, sentiment='alert'
-       WHERE id=$1 AND dater_id=$2 RETURNING *`,
+      'SELECT token FROM guardian_sessions WHERE id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
+
     // Log SOS alert
     await db.query(
-      'INSERT INTO sos_alerts (session_id, location) VALUES ($1,$2)',
-      [req.params.id, location ? JSON.stringify(location) : null]
+      'INSERT INTO sos_alerts (user_id, lat, lng, message) VALUES ($1,$2,$3,$4)',
+      [req.user.id, lat, lng, 'Manual SOS triggered']
     );
-    if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:sos', { session: rows[0], location });
+
+    if (_io) _io.to(`guardian:${rows[0].token}`).emit('guardian:sos', { sessionId: req.params.id, location });
     res.json({ ok: true });
   } catch (err) {
+    console.error('[guardian] SOS:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -192,16 +193,21 @@ router.post('/sessions/:id/sos', sosLimiter, requireAuth, async (req, res) => {
 // POST /api/guardian/sessions/:id/sos/cancel
 router.post('/sessions/:id/sos/cancel', requireAuth, async (req, res) => {
   try {
+    // Mark any active sos_alerts as resolved
+    await db.query(
+      `UPDATE sos_alerts SET status='resolved'
+       WHERE user_id=$1 AND status='active'`,
+      [req.user.id]
+    );
     const { rows } = await db.query(
-      `UPDATE guardian_sessions
-       SET is_sos=FALSE, sentiment='normal', last_checkin_at=NOW()
-       WHERE id=$1 AND dater_id=$2 RETURNING *`,
+      'SELECT token FROM guardian_sessions WHERE id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
-    if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:update', rows[0]);
+    if (_io) _io.to(`guardian:${rows[0].token}`).emit('guardian:update', { id: req.params.id, sos: false });
     res.json({ ok: true });
   } catch (err) {
+    console.error('[guardian] SOS cancel:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -210,13 +216,15 @@ router.post('/sessions/:id/sos/cancel', requireAuth, async (req, res) => {
 router.post('/sessions/:id/end', requireAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      'UPDATE guardian_sessions SET is_active=FALSE WHERE id=$1 AND dater_id=$2 RETURNING session_token',
+      `UPDATE guardian_sessions SET status='ended', ended_at=NOW()
+       WHERE id=$1 AND user_id=$2 RETURNING token`,
       [req.params.id, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Session not found' });
-    if (_io) _io.to(`guardian:${rows[0].session_token}`).emit('guardian:ended');
+    if (_io) _io.to(`guardian:${rows[0].token}`).emit('guardian:ended');
     res.json({ ok: true });
   } catch (err) {
+    console.error('[guardian] end session:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

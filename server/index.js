@@ -452,7 +452,7 @@ io.on('connection', (socket) => {
 
   socket.on('call:end', async ({ matchId: rawMatchId }) => {
     try {
-      const matchId = await resolveMatchId(rawMatchId);
+      const matchId = await resolveMatchId(rawMatchId, userId);
       if (!matchId) return;
       socket.to(`match:${matchId}`).emit('call:end', { matchId: rawMatchId });
     } catch (err) {
@@ -508,8 +508,9 @@ io.on('connection', (socket) => {
   socket.on('join_radar', (matchId) => {
     if (matchId) socket.join(`radar:${matchId}`);
   });
-  socket.on('radar:update', ({ userId: uid, matchId, lat, lng }) => {
-    socket.to(`radar:${matchId}`).emit('radar:location', { userId: uid || userId, lat, lng });
+  socket.on('radar:update', ({ matchId, lat, lng }) => {
+    // Always use authenticated userId — never trust userId from client payload
+    socket.to(`radar:${matchId}`).emit('radar:location', { userId, lat, lng });
   });
 
   // Community Rooms — real-time post broadcast
