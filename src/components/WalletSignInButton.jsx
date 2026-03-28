@@ -66,7 +66,12 @@ export default function WalletSignInButton({ onSuccess, onError, label = 'Sign i
 
             onSuccessRef.current?.(data);
         } catch (err) {
-            console.error('[WalletSignIn] Error:', err);
+            console.error('[WalletSignIn] Error:', {
+                message: err?.message,
+                name: err?.name,
+                code: err?.code,
+                step,
+            });
             onErrorRef.current?.(friendlyError(err));
         } finally {
             setPending(false);
