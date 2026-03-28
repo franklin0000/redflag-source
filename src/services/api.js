@@ -18,13 +18,23 @@ async function request(path, options = {}) {
     ...options.headers,
   };
 
-  // 12 s timeout so auth checks don't hang forever during server cold-start / deploy
+  // 35 s timeout — long enough for Render free-tier cold starts (~30 s)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(
+    () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+    35000
+  );
 
   let res;
   try {
     res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    // Convert AbortError / TimeoutError into a readable message
+    if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+      throw new Error('Server is starting up — please wait a moment and try again');
+    }
+    throw err;
   } finally {
     clearTimeout(timeoutId);
   }
