@@ -6,6 +6,15 @@ import SplashScreen from './components/SplashScreen.jsx';
 import { Web3Provider } from './context/Web3Provider';
 import { registerSW } from 'virtual:pwa-register';
 
+// Helper: was the current page load triggered by a reload (vs. fresh navigation)?
+// Used to break update/chunk-error reload loops — we only reload on fresh navigations.
+function wasPageReloaded() {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0];
+    return nav?.type === 'reload' || nav?.type === 'back_forward';
+  } catch { return false; }
+}
+
 // Recover from stale SW cache: if a lazy-loaded JS chunk 404s, reload once
 window.addEventListener('unhandledrejection', (event) => {
   const msg = event.reason?.message || '';
@@ -15,25 +24,18 @@ window.addEventListener('unhandledrejection', (event) => {
     msg.includes('Importing a module script failed') ||
     msg.includes('error loading dynamically imported module')
   ) {
-    if (!sessionStorage.getItem('chunk_reload')) {
-      sessionStorage.setItem('chunk_reload', '1');
-      window.location.reload();
-    }
+    if (!wasPageReloaded()) window.location.reload();
   }
 });
 
 // Register PWA Service Worker — auto-reload on new version
 registerSW({
   onNeedRefresh() {
-    // Guard against infinite reload loops (multiple rapid deploys)
-    if (!sessionStorage.getItem('sw_refreshed')) {
-      sessionStorage.setItem('sw_refreshed', '1');
-      window.location.reload();
-    }
+    // Only reload on fresh navigations — prevents loop on rapid deploys
+    if (!wasPageReloaded()) window.location.reload();
   },
   onOfflineReady() {},
   onRegistered(r) {
-    // Poll for updates every 60 s
     r && setInterval(() => r.update(), 60_000);
   },
 });
