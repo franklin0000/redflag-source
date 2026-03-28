@@ -125,14 +125,14 @@ router.post('/send', requireAuth, async (req, res) => {
 });
 
 // Helper: Send notification to user (call from other routes)
-module.exports.sendPush = async (userId, title, body, data = {}) => {
+async function sendPush(userId, title, body, data = {}) {
   try {
     const { rows } = await db.query(
       'SELECT subscription FROM push_subscriptions WHERE user_id = $1',
       [userId]
     );
     if (rows.length === 0) return false;
-    
+
     const subscription = JSON.parse(rows[0].subscription);
     await webpush.sendNotification(subscription, JSON.stringify({
       title,
@@ -148,6 +148,7 @@ module.exports.sendPush = async (userId, title, body, data = {}) => {
     console.warn('Push notification failed:', err.message);
     return false;
   }
-};
+}
 
+router.sendPush = sendPush;
 module.exports = router;

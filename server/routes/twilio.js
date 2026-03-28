@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const twilio = require('twilio')(
-  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 const { requireAuth } = require('../middleware/auth');
@@ -142,7 +142,7 @@ router.get('/token', requireAuth, async (req, res) => {
 
     // Create an Access Token
     const accessToken = new AccessToken(
-      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID,
       process.env.TWILIO_API_KEY_SID,
       process.env.TWILIO_API_KEY_SECRET,
       { identity: identity }

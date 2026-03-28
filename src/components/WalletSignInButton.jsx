@@ -70,7 +70,6 @@ export default function WalletSignInButton({ onSuccess, onError, label = 'Sign i
                 message: err?.message,
                 name: err?.name,
                 code: err?.code,
-                step,
             });
             onErrorRef.current?.(friendlyError(err));
         } finally {

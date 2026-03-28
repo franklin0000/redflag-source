@@ -470,12 +470,14 @@ export default function DatingChat() {
             }
 
             if (svgCode) {
-                const safeSvg = sanitizeInput(svgCode, { maxLength: 50000, allowBasicHtml: true });
+                // Render SVG as <img> data URI — sandboxed by browser, no JS execution risk
+                const dataUri = `data:image/svg+xml,${encodeURIComponent(svgCode)}`;
                 return (
-                    <div
+                    <img
+                        src={dataUri}
                         className="w-24 h-24 drop-shadow-md transform transition-transform hover:scale-110 cursor-pointer"
-                        dangerouslySetInnerHTML={{ __html: safeSvg }}
-                        title="Custom Sticker"
+                        alt="Custom Sticker"
+                        draggable={false}
                     />
                 );
             }
@@ -655,7 +657,7 @@ export default function DatingChat() {
                                 </p>
                             )}
                             <p className="text-[10px] text-purple-400 uppercase tracking-wider flex items-center gap-1">
-                                <span className="material-icons text-[10px]">lock</span> End-to-End Encrypted
+                                <span className="material-icons text-[10px]">shield</span> Private Chat
                             </p>
                         </div>
                     </button>
@@ -736,9 +738,9 @@ export default function DatingChat() {
                 </div>
             </div>
 
-            {/* Encrytion Notice */}
-            <div className="bg-yellow-100 dark:bg-yellow-900/30 p-2 text-center text-xs text-yellow-800 dark:text-yellow-200 flex items-center justify-center gap-1">
-                <span className="material-icons text-xs">lock</span> Messages are end-to-end encrypted.
+            {/* Privacy Notice */}
+            <div className="bg-gray-100 dark:bg-gray-800/50 p-2 text-center text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
+                <span className="material-icons text-xs">shield</span> Messages are private and stored securely.
             </div>
 
             {/* Search Bar */}

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { signToken, signRefreshToken, JWT_SECRET } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
+const { sendPasswordResetEmail } = require('../services/emailService');
 
 const rateLimit = require('express-rate-limit');
 const makeLimit = (max, windowMin = 15) =>
@@ -133,7 +134,13 @@ router.post('/forgot-password', resetLimiter, async (req, res) => {
       'UPDATE users SET reset_token = $1, reset_token_exp = $2 WHERE id = $3',
       [token, exp, rows[0].id]
     );
-    // TODO: send email with reset link in production
+    // Send password reset email (async, non-blocking — user gets response immediately)
+    const appBase = process.env.FRONTEND_URL
+      || process.env.VITE_API_URL
+      || `${req.protocol}://${req.get('host')}`;
+    sendPasswordResetEmail(email.toLowerCase(), token, appBase).catch((err) => {
+      console.error('[Email] Failed to send reset email:', err.message);
+    });
     res.json({ message: 'If that email exists, a reset link was sent.' });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

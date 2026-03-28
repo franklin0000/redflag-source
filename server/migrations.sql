@@ -140,12 +140,30 @@ CREATE INDEX IF NOT EXISTS idx_location_flags_lat_lng ON location_flags(lat, lng
 
 
 -- Community post flags (moderation reports)
+-- Recreated with correct UUID types to match users.id and posts.id
+DROP TABLE IF EXISTS post_flags;
 CREATE TABLE IF NOT EXISTS post_flags (
-  id         BIGSERIAL PRIMARY KEY,
-  post_id    TEXT NOT NULL,
-  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id    UUID NOT NULL,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   reason     TEXT NOT NULL DEFAULT 'inappropriate',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(post_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_post_flags_post_id ON post_flags(post_id);
+
+-- Push notification subscriptions (web push)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  user_id      UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  subscription TEXT NOT NULL,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Relationship column for trusted_contacts (used by contacts route)
+ALTER TABLE trusted_contacts ADD COLUMN IF NOT EXISTS relationship TEXT DEFAULT 'friend';
+
+-- reporter_id for /api/reports/me lookup (non-anonymous path)
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS reporter_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
+-- reporter_hash on comments (anonymous report comments — mirrors reports.reporter_hash)
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS reporter_hash TEXT;

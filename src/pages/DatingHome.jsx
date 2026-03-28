@@ -77,28 +77,29 @@ export default function DatingHome() {
         setSwipeDirection(direction);
 
         // Optimistic UI update: wait for animation then move to next
-        setTimeout(async () => {
+        setTimeout(() => {
             // Move to next card immediately for smoothness
             setCurrentIndex(prev => prev + 1);
             setSwipeDirection(null);
 
-            // Backend call
-            if (direction === 'right' || direction === 'superlike') {
-                // Map superlike to right for backend compatibility if needed, or send true direction
-                // Sending 'right' to be safe with DB constraints, or check if 'superlike' is allowed.
-                // For now, treat as 'right' (Like) but with special UI.
-                const backendDirection = 'right';
-                const result = await swipeProfile(profile.id, backendDirection);
-
-                if (result.isMatch) {
-                    setMatchedProfile(profile);
-                    setShowMatchOverlay(true);
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    toast.success("It's a Match! 🎉");
+            // Backend call — wrapped in async IIFE with catch to prevent unhandled rejections
+            (async () => {
+                try {
+                    if (direction === 'right' || direction === 'superlike') {
+                        const result = await swipeProfile(profile.id, 'right');
+                        if (result?.isMatch) {
+                            setMatchedProfile(profile);
+                            setShowMatchOverlay(true);
+                            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                            toast.success("It's a Match! 🎉");
+                        }
+                    } else {
+                        await swipeProfile(profile.id, 'left');
+                    }
+                } catch {
+                    // swipeProfile already handles errors internally; ignore here
                 }
-            } else {
-                await swipeProfile(profile.id, 'left');
-            }
+            })();
         }, 300);
     };
 
