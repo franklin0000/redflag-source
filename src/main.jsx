@@ -6,6 +6,22 @@ import SplashScreen from './components/SplashScreen.jsx';
 import { Web3Provider } from './context/Web3Provider';
 import { registerSW } from 'virtual:pwa-register';
 
+// Recover from stale SW cache: if a lazy-loaded JS chunk 404s, reload once
+window.addEventListener('unhandledrejection', (event) => {
+  const msg = event.reason?.message || '';
+  if (
+    event.reason?.name === 'ChunkLoadError' ||
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('error loading dynamically imported module')
+  ) {
+    if (!sessionStorage.getItem('chunk_reload')) {
+      sessionStorage.setItem('chunk_reload', '1');
+      window.location.reload();
+    }
+  }
+});
+
 // Register PWA Service Worker — auto-reload on new version
 registerSW({
   onNeedRefresh() {

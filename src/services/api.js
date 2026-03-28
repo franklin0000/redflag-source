@@ -18,7 +18,16 @@ async function request(path, options = {}) {
     ...options.headers,
   };
 
-  let res = await fetch(`${BASE}${path}`, { ...options, headers });
+  // 12 s timeout so auth checks don't hang forever during server cold-start / deploy
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   // Auto-refresh on 401
   if (res.status === 401) {
