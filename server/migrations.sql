@@ -167,3 +167,7 @@ ALTER TABLE reports ADD COLUMN IF NOT EXISTS reporter_id UUID REFERENCES users(i
 
 -- reporter_hash on comments (anonymous report comments — mirrors reports.reporter_hash)
 ALTER TABLE comments ADD COLUMN IF NOT EXISTS reporter_hash TEXT;
+
+-- reported_user_id links reports to the accused user account (for dating profile red-flag count)
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS reported_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_reports_reported_user_id ON reports(reported_user_id);

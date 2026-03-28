@@ -46,9 +46,9 @@ router.get('/', optionalAuth, async (req, res) => {
 
 // POST /api/reports — create report (Zero-Knowledge Identity)
 router.post('/', requireAuth, async (req, res) => {
-  const { reported_name, platform, description, category, evidence_urls } = req.body;
+  const { reported_name, platform, description, category, evidence_urls, reported_user_id } = req.body;
   if (!reported_name) return res.status(400).json({ error: 'reported_name required' });
-  
+
   try {
     const reporterHash = await generateBlindedHash(req.user.id);
 
@@ -57,9 +57,9 @@ router.post('/', requireAuth, async (req, res) => {
     const editToken = crypto.randomBytes(16).toString('hex');
 
     const { rows } = await db.query(
-      `INSERT INTO reports (reporter_hash, reported_name, platform, description, category, evidence_urls, edit_token)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, reported_name, platform, description, category, evidence_urls, created_at, edit_token`,
-      [reporterHash, reported_name, platform, description, category, evidence_urls || [], editToken]
+      `INSERT INTO reports (reporter_hash, reported_name, platform, description, category, evidence_urls, edit_token, reported_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, reported_name, platform, description, category, evidence_urls, created_at, edit_token`,
+      [reporterHash, reported_name, platform, description, category, evidence_urls || [], editToken, reported_user_id || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {

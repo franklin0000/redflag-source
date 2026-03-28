@@ -56,7 +56,7 @@ router.get('/profile/:userId', requireAuth, async (req, res) => {
 
     // Reports filed against them (red flag count)
     const { rows: repRows } = await db.query(
-      'SELECT COUNT(*) FROM reports WHERE reported_id = $1',
+      'SELECT COUNT(*) FROM reports WHERE reported_user_id = $1',
       [userId]
     );
     const reportCount = parseInt(repRows[0].count) || 0;
