@@ -58,15 +58,33 @@ export default class ErrorBoundary extends React.Component {
                                 {this.state.componentStack.trim().split('\n').slice(0,6).join('\n')}
                             </p>
                         )}
-                        <button
-                            onClick={() => {
-                                sessionStorage.removeItem('rf_eb_reloaded');
-                                window.location.href = '/';
-                            }}
-                            className="px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors"
-                        >
-                            Go to Home
-                        </button>
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                            <button
+                                onClick={() => {
+                                    sessionStorage.removeItem('rf_eb_reloaded');
+                                    window.location.href = '/';
+                                }}
+                                className="px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors"
+                            >
+                                Go to Home
+                            </button>
+                            <button
+                                onClick={() => {
+                                    sessionStorage.clear();
+                                    localStorage.removeItem('rf_token');
+                                    localStorage.removeItem('rf_refresh');
+                                    if ('caches' in window) {
+                                        caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
+                                            .finally(() => window.location.reload());
+                                    } else {
+                                        window.location.reload();
+                                    }
+                                }}
+                                className="px-6 py-3 bg-gray-700 text-white font-medium rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                            >
+                                Clear Cache &amp; Reload
+                            </button>
+                        </div>
                     </div>
                 </div>
             );

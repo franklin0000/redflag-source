@@ -15,6 +15,13 @@ function wasPageReloaded() {
   } catch { return false; }
 }
 
+// Server warmup ping — fires immediately on page load (fire & forget).
+// Wakes Render free-tier cold starts before the user even touches the form.
+{
+  const BASE = import.meta.env.VITE_API_URL || '';
+  fetch(`${BASE}/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+}
+
 // Recover from stale SW cache: if a lazy-loaded JS chunk 404s, reload once
 window.addEventListener('unhandledrejection', (event) => {
   const msg = event.reason?.message || '';
@@ -28,11 +35,20 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
-// Register PWA Service Worker — auto-reload on new version
+// Register PWA Service Worker — clear cache and reload on new version
 registerSW({
   onNeedRefresh() {
-    // Only reload on fresh navigations — prevents loop on rapid deploys
-    if (!wasPageReloaded()) window.location.reload();
+    // Clear all SW caches then reload — prevents stale JS chunks after deploys.
+    // Anti-loop: track the reload in sessionStorage so we only do it once per session.
+    const key = 'sw_cache_cleared';
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    if ('caches' in window) {
+      caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
+        .finally(() => window.location.reload());
+    } else {
+      window.location.reload();
+    }
   },
   onOfflineReady() {},
   onRegistered(r) {

@@ -74,7 +74,6 @@ export default function Login() {
             toast.success('Welcome back!');
             navigate('/');
         } catch (err) {
-            const elapsed = err._elapsed ? `${err._elapsed}ms` : '';
             console.error('[Login] Error:', {
                 message: err?.message,
                 name: err?.name,
@@ -91,7 +90,7 @@ export default function Login() {
             let msg = err.message || 'Error al iniciar sesión.';
             const code = err.code || '';
             if (code === 'invalid_credentials' || msg.includes('Invalid login credentials') || msg.includes('Invalid credentials')) {
-                msg = 'Correo o contraseña incorrectos.';
+                msg = 'Correo o contraseña incorrectos. ¿Eres nuevo? Crea una cuenta con "create a new account".';
             } else if (code === 'email_not_confirmed' || msg.includes('Email not confirmed')) {
                 msg = 'Tu correo no ha sido confirmado. Revisa tu inbox.';
             } else if (msg.toLowerCase().includes('rate limit') || code === 'over_request_rate_limit') {
@@ -104,6 +103,19 @@ export default function Login() {
             setError(msg);
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const clearCacheAndReload = () => {
+        sessionStorage.clear();
+        localStorage.removeItem('rf_token');
+        localStorage.removeItem('rf_refresh');
+        localStorage.removeItem('splash_shown');
+        if ('caches' in window) {
+            caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
+                .finally(() => window.location.reload());
+        } else {
+            window.location.reload();
         }
     };
 
@@ -211,6 +223,16 @@ export default function Login() {
                         </button>
                     </div>
                 </form>
+
+                {/* Cache troubleshooting */}
+                <div className="mt-6 text-center">
+                    <button
+                        onClick={clearCacheAndReload}
+                        className="text-xs text-gray-400 hover:text-gray-300 underline underline-offset-2"
+                    >
+                        ¿La app no carga bien? Limpiar caché
+                    </button>
+                </div>
             </div>
         </div>
     );
